@@ -24,9 +24,13 @@ renderer (React)  →  preload (contextBridge)  →  main (Electron)
 | Sistema | efeitos visuais, transparência, animações, apps em background |
 | Rede | NetworkThrottlingIndex, TcpNoDelay (avançado) |
 | Input | precisão do ponteiro off |
-| Serviços | SysMain em SSD (avançado) |
+| Serviços | SysMain em SSD; Xbox Live Auth, Game Save e Networking opcionais |
 
 Fora de escopo de propósito: Defender, firewall, UAC, BCDEdit, “limpa registro”.
+
+Os serviços Xbox são avançados e desativados apenas sob escolha explícita. Isso pode interromper
+login, multiplayer, convites ou sincronização de saves do Xbox/Game Pass. O ganho de desempenho
+depende do PC e não é garantido; cada alteração salva o estado anterior para reversão.
 
 ## Rodar
 

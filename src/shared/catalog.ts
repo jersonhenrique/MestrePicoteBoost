@@ -159,6 +159,33 @@ export const TWEAKS: Tweak[] = [
     category: 'servicos',
     risk: 'avancado',
     requiresAdmin: true
+  },
+  {
+    id: 'xbox-auth',
+    title: 'Xbox Live Auth Manager',
+    blurb: 'Se não usa Xbox Live/Game Pass; desativar pode interromper login e recursos sociais.',
+    detail: 'Desativa XblAuthManager. Pode impedir autenticação Xbox, recursos sociais e alguns jogos do Game Pass.',
+    category: 'servicos',
+    risk: 'avancado',
+    requiresAdmin: true
+  },
+  {
+    id: 'xbox-game-save',
+    title: 'Xbox Live Game Save',
+    blurb: 'Se não usa Xbox cloud save; pode impedir sincronização de saves entre PCs.',
+    detail: 'Desativa XblGameSave. Não use se depender de saves sincronizados pela Xbox network.',
+    category: 'servicos',
+    risk: 'avancado',
+    requiresAdmin: true
+  },
+  {
+    id: 'xbox-network',
+    title: 'Xbox Live Networking Service',
+    blurb: 'Se não usa Xbox Live; pode afetar multiplayer e convites em jogos Xbox.',
+    detail: 'Desativa XboxNetApiSvc. Pode afetar partidas, convites e recursos online de jogos Xbox/Game Pass.',
+    category: 'servicos',
+    risk: 'avancado',
+    requiresAdmin: true
   }
 ]
 

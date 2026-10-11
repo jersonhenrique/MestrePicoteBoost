@@ -10,7 +10,8 @@ const { state, runPs, runPsSafe } = vi.hoisted(() => ({
     hardwareJson: '',
     isAdmin: 'true',
     powerScheme: '(SCHEME_CURRENT) 11111111-1111-1111-1111-111111111111 (Balanced)',
-    registryValues: {} as Record<string, string>
+    registryValues: {} as Record<string, string>,
+    serviceStates: {} as Record<string, { status: string; startMode: string }>
   },
   runPs: vi.fn(),
   runPsSafe: vi.fn()
@@ -37,13 +38,26 @@ beforeEach(async () => {
   state.hardwareJson = ''
   state.powerScheme = '(SCHEME_CURRENT) 11111111-1111-1111-1111-111111111111 (Balanced)'
   state.registryValues = {}
+  state.serviceStates = {
+    SysMain: { status: 'Running', startMode: 'Auto' },
+    XblAuthManager: { status: 'Running', startMode: 'Manual' },
+    XblGameSave: { status: 'Running', startMode: 'Auto' },
+    XboxNetApiSvc: { status: 'Running', startMode: 'Manual' }
+  }
   runPs.mockReset().mockResolvedValue({ stdout: '', stderr: '' })
   runPsSafe.mockReset().mockImplementation(async (command: string) => {
     if (command.includes('IsInRole')) return state.isAdmin
     if (command.includes('powercfg /getactivescheme')) return state.powerScheme
     if (command.includes('ConvertTo-Json')) return state.hardwareJson
-    if (command.includes('Get-Service SysMain')) return state.registryValues.SysMain ?? 'Running'
     if (command.includes('$ifaces')) return state.registryValues.Nagle ?? '0'
+    const serviceName = command.match(/Name(?:\s*=\s*|\s+)['"]([^'"]+)['"]/i)?.[1]
+    if (command.includes('Get-CimInstance Win32_Service')) {
+      const service = serviceName ? state.serviceStates[serviceName] : undefined
+      return service ? `${service.status}|${service.startMode}` : 'MISSING|MISSING'
+    }
+    if (command.includes('Get-Service -Name')) {
+      return serviceName ? state.serviceStates[serviceName]?.status ?? '' : ''
+    }
     const valueName = command.match(/-Name '([^']+)'/)?.[1]
     return valueName ? state.registryValues[valueName] ?? '0' : ''
   })
@@ -106,9 +120,12 @@ describe('tweak status, apply, and revert operations', () => {
       GlobalUserDisabled: '1',
       NetworkThrottlingIndex: 'ffffffff',
       MouseSpeed: '0',
-      SysMain: 'Stopped',
       Nagle: '1'
     }
+    state.serviceStates.SysMain.status = 'Stopped'
+    state.serviceStates.XblAuthManager.status = 'Stopped'
+    state.serviceStates.XblGameSave.status = 'Stopped'
+    state.serviceStates.XboxNetApiSvc.status = 'Stopped'
     state.powerScheme = '(SCHEME_CURRENT) e9a42b02-d5df-448d-aa00-03f14749eb61 (Ultimate Performance)'
 
     const statuses = await engine.getStatuses()
@@ -125,6 +142,7 @@ describe('tweak status, apply, and revert operations', () => {
       applied: false,
       current: 'plano ativo'
     })
+    expect(statuses.filter((status) => status.id.startsWith('xbox-')).every((status) => status.applied)).toBe(true)
   })
 
   it('applies and reverts every catalog tweak, recording success for each action', async () => {
@@ -140,6 +158,8 @@ describe('tweak status, apply, and revert operations', () => {
     expect(reverted.results).toHaveLength(ids.length)
     expect(reverted.results.every((result) => result.ok)).toBe(true)
     expect(reverted.log.every((line) => line.startsWith('REV'))).toBe(true)
+    expect(runPs).toHaveBeenCalledWith(expect.stringContaining("sc.exe config 'XblAuthManager' start= demand"))
+    expect(runPs).toHaveBeenCalledWith(expect.stringContaining("Start-Service -Name 'XblAuthManager'"))
   })
 
   it('returns a failure result for an unknown tweak without aborting the report', async () => {

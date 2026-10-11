@@ -11,6 +11,17 @@ interface Snapshot {
 }
 
 const ULTIMATE_SCHEME = 'e9a42b02-d5df-448d-aa00-03f14749eb61'
+const OPTIONAL_SERVICES: Record<string, string> = {
+  sysmain: 'SysMain',
+  'xbox-auth': 'XblAuthManager',
+  'xbox-game-save': 'XblGameSave',
+  'xbox-network': 'XboxNetApiSvc'
+}
+
+interface ServiceState {
+  status: string
+  startMode: string
+}
 
 function storePath(): string {
   return join(app.getPath('userData'), 'picote-snapshot.json')
@@ -31,7 +42,7 @@ async function saveSnapshot(snap: Snapshot): Promise<void> {
 }
 
 const restoreStore = new RestorePointStore(join(app.getPath('userData'), 'picote-restore-points.json'))
-const restoreService = new RestorePointService(restoreStore)
+const restorePointService = new RestorePointService(restoreStore)
 
 async function remember(id: string, data: Record<string, string>): Promise<void> {
   const snap = await loadSnapshot()
@@ -121,6 +132,53 @@ async function powerGuid(): Promise<string> {
   return match?.[0] ?? ''
 }
 
+async function getServiceState(name: string): Promise<ServiceState> {
+  const output = await runPsSafe(`
+$service = Get-CimInstance Win32_Service -Filter "Name='${name}'" -ErrorAction SilentlyContinue
+if ($null -eq $service) { 'MISSING|MISSING' } else { '{0}|{1}' -f $service.State, $service.StartMode }
+`)
+  const [status, startMode] = output.split('|')
+  if (!status || status === 'MISSING' || !startMode || startMode === 'MISSING') {
+    throw new Error(`Serviço do Windows não encontrado: ${name}`)
+  }
+  return { status, startMode }
+}
+
+async function disableService(name: string): Promise<void> {
+  await runPs(`
+$service = Get-Service -Name '${name}' -ErrorAction Stop
+if ($service.Status -ne 'Stopped') { Stop-Service -Name '${name}' -Force -ErrorAction Stop }
+Set-Service -Name '${name}' -StartupType Disabled -ErrorAction Stop
+`)
+}
+
+async function restoreWindowsService(name: string, previous: ServiceState): Promise<void> {
+  const startModes: Record<string, string> = {
+    Boot: 'boot',
+    System: 'system',
+    Auto: 'auto',
+    Manual: 'demand',
+    Disabled: 'disabled'
+  }
+  const startMode = startModes[previous.startMode]
+  if (!startMode) {
+    throw new Error(`Tipo de inicialização não reconhecido para ${name}: ${previous.startMode}`)
+  }
+
+  await runPs(`
+& sc.exe config '${name}' start= ${startMode} | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'Falha ao restaurar a inicialização do serviço ${name}' }
+switch ('${previous.status}') {
+  'Running' { Start-Service -Name '${name}' -ErrorAction Stop }
+  'Paused' {
+    Start-Service -Name '${name}' -ErrorAction Stop
+    Suspend-Service -Name '${name}' -ErrorAction Stop
+  }
+  default { Stop-Service -Name '${name}' -Force -ErrorAction SilentlyContinue }
+}
+`)
+}
+
 export async function getStatuses(): Promise<TweakStatus[]> {
   const schemeLine = await powerSchemeLine()
   const scheme = schemeLine.match(
@@ -136,8 +194,7 @@ export async function getStatuses(): Promise<TweakStatus[]> {
     anim,
     bg,
     throttle,
-    mouse,
-    sysmain
+    mouse
   ] = await Promise.all([
     regGet('HKCU', 'Software\\Microsoft\\GameBar', 'AutoGameModeEnabled'),
     regGet('HKLM', 'SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers', 'HwSchMode'),
@@ -148,8 +205,7 @@ export async function getStatuses(): Promise<TweakStatus[]> {
     regGet('HKCU', 'Control Panel\\Desktop\\WindowMetrics', 'MinAnimate'),
     regGet('HKCU', 'Software\\Microsoft\\Windows\\CurrentVersion\\BackgroundAccessApplications', 'GlobalUserDisabled'),
     regGet('HKLM', 'SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile', 'NetworkThrottlingIndex'),
-    regGet('HKCU', 'Control Panel\\Mouse', 'MouseSpeed'),
-    runPsSafe('(Get-Service SysMain -ErrorAction SilentlyContinue).Status')
+    regGet('HKCU', 'Control Panel\\Mouse', 'MouseSpeed')
   ])
 
   const nagleSample = await runPsSafe(`
@@ -161,6 +217,9 @@ foreach ($i in $ifaces) {
 }
 if ($hit) { '1' } else { '0' }
 `)
+  const serviceStatuses = await Promise.all(
+    Object.entries(OPTIONAL_SERVICES).map(async ([id, name]) => [id, await runPsSafe(`(Get-Service -Name '${name}' -ErrorAction SilentlyContinue).Status`)] as const)
+  )
 
   const map: Record<string, { applied: boolean; current: string }> = {
     'ultimate-power': {
@@ -179,8 +238,10 @@ if ($hit) { '1' } else { '0' }
     'background-apps': { applied: bg === '1', current: bg },
     'network-throttle': { applied: throttle === '4294967295' || throttle.toLowerCase() === 'ffffffff', current: throttle },
     nagle: { applied: nagleSample === '1', current: nagleSample },
-    'mouse-accel': { applied: mouse === '0', current: mouse },
-    sysmain: { applied: sysmain.toLowerCase() === 'stopped', current: sysmain || 'MISSING' }
+    'mouse-accel': { applied: mouse === '0', current: mouse }
+  }
+  for (const [id, serviceStatus] of serviceStatuses) {
+    map[id] = { applied: serviceStatus.toLowerCase() === 'stopped', current: serviceStatus || 'MISSING' }
   }
 
   return TWEAKS.map((t) => ({
@@ -336,13 +397,15 @@ New-ItemProperty -Path $path -Name 'MouseThreshold2' -PropertyType String -Value
 `)
       return 'Precisão do ponteiro desligada'
     }
-    case 'sysmain': {
-      await remember(id, {
-        start: await runPsSafe('(Get-Service SysMain).StartType'),
-        status: await runPsSafe('(Get-Service SysMain).Status')
-      })
-      await runPs('Stop-Service SysMain -Force -ErrorAction SilentlyContinue; Set-Service SysMain -StartupType Disabled')
-      return 'SysMain parado (SSD)'
+    case 'sysmain':
+    case 'xbox-auth':
+    case 'xbox-game-save':
+    case 'xbox-network': {
+      const serviceName = OPTIONAL_SERVICES[id]
+      const previous = await getServiceState(serviceName)
+      await remember(id, { startMode: previous.startMode, status: previous.status })
+      await disableService(serviceName)
+      return `${serviceName} parado e desativado`
     }
     default:
       throw new Error(`Tweak desconhecido: ${id}`)
@@ -434,7 +497,15 @@ New-ItemProperty -Path $path -Name 'MouseThreshold2' -PropertyType String -Value
 `)
       break
     case 'sysmain':
-      await runPs('Set-Service SysMain -StartupType Manual; Start-Service SysMain -ErrorAction SilentlyContinue')
+    case 'xbox-auth':
+    case 'xbox-game-save':
+    case 'xbox-network':
+      if (prev?.startMode && prev.status) {
+        await restoreWindowsService(OPTIONAL_SERVICES[id], {
+          startMode: prev.startMode,
+          status: prev.status
+        })
+      }
       break
     case 'mmcss-games': {
       const path = 'SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Games'
@@ -457,7 +528,7 @@ New-ItemProperty -Path $path -Name 'MouseThreshold2' -PropertyType String -Value
 }
 
 export async function listRestorePoints(): Promise<RestorePoint[]> {
-  return restoreService.listSnapshots()
+  return restorePointService.listSnapshots()
 }
 
 export async function createRestorePoint(description?: string): Promise<RestorePoint> {
@@ -465,11 +536,11 @@ export async function createRestorePoint(description?: string): Promise<RestoreP
   const appliedIds = TWEAKS.filter((tweak) => statuses.some((status) => status.id === tweak.id && status.applied)).map(
     (tweak) => tweak.id
   )
-  return restoreService.createSnapshot(description, appliedIds)
+  return restorePointService.createSnapshot(description, appliedIds)
 }
 
 export async function restoreFromPoint(id: string): Promise<ApplyReport> {
-  const point = await restoreService.restoreSnapshot(id)
+  const point = await restorePointService.restoreSnapshot(id)
   if (!point) {
     throw new Error(`Ponto de restauração não encontrado: ${id}`)
   }
