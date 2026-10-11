@@ -30,6 +30,9 @@ jobs:
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
+      - name: Clean prior Allure results
+        run: npm run allure:clean
+
       - name: Run unit tests
         run: npm test
 

@@ -7,7 +7,11 @@ export default defineConfig({
     globals: true,
     include: ['src/**/*.test.ts'],
     exclude: ['tests/**', 'node_modules/**'],
-    setupFiles: ['./vitest.setup.ts']
+    setupFiles: ['./vitest.setup.ts'],
+    reporters: ['default', 'allure-vitest/reporter'],
+    outputFile: {
+      junit: 'test-results/unit-junit.xml'
+    }
   },
   resolve: {
     alias: {

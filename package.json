@@ -13,8 +13,11 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "allure:clean": "node -e \"import('node:fs/promises').then(fs => fs.rm('allure-results', { recursive: true, force: true }))\"",
     "allure:report": "allure generate allure-results --clean -o allure-report",
-    "ci:test": "npm run test && npm run test:e2e && npm run allure:report"
+    "allure:open": "allure open allure-report",
+    "ci:test": "npm run allure:clean && npm run test && npm run test:e2e && npm run allure:report",
+    "dist:win": "npm run build && electron-builder --win nsis"
   },
   "dependencies": {
     "react": "^19.1.0",
@@ -30,11 +33,34 @@
     "@vitejs/plugin-react": "^5.0.3",
     "allure-commandline": "^2.46.1",
     "allure-playwright": "^3.13.0",
+    "allure-vitest": "^3.13.0",
     "electron": "^38.8.6",
+    "electron-builder": "^26.15.3",
     "electron-vite": "^4.0.1",
     "jsdom": "^30.1.2",
     "typescript": "^5.9.2",
     "vite": "^7.1.7",
     "vitest": "^5.0.3"
+  },
+  "build": {
+    "appId": "com.mestrepicote.boost",
+    "productName": "MestrePicoteBoost",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "artifactName": "${productName}-${version}-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    }
   }
 }
