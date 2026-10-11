@@ -94,8 +94,9 @@ test('validates all user-facing application workflows with screenshots and final
     await expect(page.getByRole('heading', { name: 'Seu rig, no modo partida.' })).toBeVisible()
     await expect(page.getByText('Intel Core i7')).toBeVisible()
     await expect(page.getByText('NVIDIA RTX 4080')).toBeVisible()
+    await expect(page.getByText('16 GB livres de 32 GB')).toBeVisible()
     await page.getByRole('button', { name: 'Atualizar scan' }).click()
-    await expect(page.getByText('2/18 otimizações ativas')).toBeVisible()
+    await expect(page.getByText('2/19 otimizações ativas')).toBeVisible()
     await attachStepScreenshot(page, '05 - painel, hardware, score e atualização')
 
     for (let index = 0; index < 4; index += 1) {
@@ -110,11 +111,11 @@ test('validates all user-facing application workflows with screenshots and final
 
   await allure.step('Filtrar catálogo, selecionar os visíveis e aplicar ajustes', async () => {
     await page.getByRole('button', { name: 'Otimizações', exact: true }).click()
+    await expect(page.locator('.tweak')).toHaveCount(14)
     await page.getByRole('button', { name: 'Serviços', exact: true }).click()
-    await expect(page.locator('.tweak')).toHaveCount(4)
-    await expect(page.getByText(/Game Pass/)).toBeVisible()
-    await expect(page.getByText(/sincronização de saves entre PCs/)).toBeVisible()
-    await attachStepScreenshot(page, '07 - serviços opcionais e alertas')
+    await expect(page.locator('.tweak')).toHaveCount(2)
+    await expect(page.getByText('Telemetria do Windows (DiagTrack)')).toBeVisible()
+    await attachStepScreenshot(page, '07 - serviço de telemetria')
     await page.getByRole('button', { name: 'Energia', exact: true }).click()
     await expect(page.locator('.tweak')).toHaveCount(3)
     await page.getByRole('button', { name: 'Marcar visíveis' }).click()
@@ -126,8 +127,20 @@ test('validates all user-facing application workflows with screenshots and final
     await expect(page.getByText(/OK .*Aplicado no teste/)).toBeVisible()
     await attachStepScreenshot(page, '09 - resultado de aplicar ajustes')
     await page.getByRole('button', { name: 'Todas', exact: true }).click()
-    await expect(page.locator('.tweak')).toHaveCount(18)
+    await expect(page.locator('.tweak')).toHaveCount(14)
     await attachStepScreenshot(page, '10 - catálogo completo')
+  })
+
+  await allure.step('Manter os itens Xbox na aba dedicada e aplicar somente a seleção Xbox', async () => {
+    await page.getByRole('button', { name: 'Xbox', exact: true }).click()
+    await expect(page.getByRole('heading', { name: 'Xbox', exact: true })).toBeVisible()
+    await expect(page.locator('.tweak')).toHaveCount(5)
+    await expect(page.getByText('Game Mode do Windows')).toBeVisible()
+    await expect(page.getByText('Xbox Live Networking Service')).toBeVisible()
+    await page.getByRole('button', { name: 'Marcar itens Xbox' }).click()
+    await page.getByRole('button', { name: 'Aplicar selecionados' }).click()
+    await expect(page.getByText(/OK .*Aplicado no teste/)).toBeVisible()
+    await attachStepScreenshot(page, '11 - aba Xbox com itens aplicados')
   })
 
   await allure.step('Reverter um item e depois todos os ajustes', async () => {

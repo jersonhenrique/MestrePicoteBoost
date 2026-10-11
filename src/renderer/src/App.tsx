@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { CATEGORIES, PROFILES, TWEAKS, type Category } from '../../shared/catalog'
 import type { ApplyReport, RestorePoint, SystemInfo, TweakStatus } from '../../shared/types'
 
-type Page = 'ponto-restauracao' | 'painel' | 'otimizacoes' | 'restaurar' | 'sobre'
+type Page = 'ponto-restauracao' | 'painel' | 'otimizacoes' | 'xbox' | 'restaurar' | 'sobre'
 
 function mockSystem(): SystemInfo {
   return {
@@ -66,7 +66,11 @@ export default function App() {
   const score = Math.round((appliedCount / TWEAKS.length) * 100)
 
   const visible = useMemo(
-    () => TWEAKS.filter((t) => filter === 'todas' || t.category === filter),
+    () =>
+      TWEAKS.filter(
+        (tweak) =>
+          tweak.category !== 'xbox' && (filter === 'todas' || tweak.category === filter)
+      ),
     [filter]
   )
 
@@ -83,10 +87,10 @@ export default function App() {
     setPage('otimizacoes')
   }
 
-  async function runApply() {
+  async function runApply(ids = selected) {
     setBusy(true)
     try {
-      const report: ApplyReport = await window.picote.apply(selected)
+      const report: ApplyReport = await window.picote.apply(ids)
       setLog(report.log.join('\n'))
       await refresh()
     } catch (err) {
@@ -163,6 +167,9 @@ export default function App() {
           >
             Otimizações
           </button>
+          <button className={page === 'xbox' ? 'active' : ''} onClick={() => setPage('xbox')}>
+            Xbox
+          </button>
           <button className={page === 'restaurar' ? 'active' : ''} onClick={() => setPage('restaurar')}>
             Restaurar
           </button>
@@ -178,6 +185,7 @@ export default function App() {
       </aside>
 
       <main className="main">
+        {error && <div className="banner">{error}</div>}
         {page === 'ponto-restauracao' && (
           <>
             <div className="hero">
@@ -251,7 +259,6 @@ export default function App() {
                 de usuário (Game Mode, mouse, visuais) ainda funcionam.
               </div>
             )}
-            {error && <div className="banner">{error}</div>}
             <section className="cards">
               <article className="card score">
                 <div className="k">Score Picote</div>
@@ -323,7 +330,7 @@ export default function App() {
                 >
                   Todas
                 </button>
-                {CATEGORIES.map((c) => (
+                {CATEGORIES.filter((c) => c.id !== 'xbox').map((c) => (
                   <button
                     key={c.id}
                     className={filter === c.id ? 'chip on' : 'chip'}
@@ -358,6 +365,80 @@ export default function App() {
                       {st?.applied ? 'ATIVA' : 'padrão'}
                       <br />
                       {st?.current && st.current !== 'MISSING' ? st.current : '—'}
+                    </div>
+                  </label>
+                )
+              })}
+            </div>
+            <div className="log">{log}</div>
+          </>
+        )}
+
+        {page === 'xbox' && (
+          <>
+            <div className="hero">
+              <div>
+                <h2>Xbox</h2>
+                <p>
+                  Ajustes do Game Mode, captura e serviços Xbox em um só lugar. Os serviços são
+                  opcionais e podem afetar login, Game Pass, multiplayer ou sincronização de saves.
+                </p>
+              </div>
+              <div className="row">
+                <button
+                  className="btn ghost"
+                  onClick={() =>
+                    setSelected((current) => [
+                      ...new Set([...current, ...TWEAKS.filter((tweak) => tweak.category === 'xbox').map((tweak) => tweak.id)])
+                    ])
+                  }
+                >
+                  Marcar itens Xbox
+                </button>
+                <button
+                  className="btn primary"
+                  disabled={busy || !TWEAKS.some((tweak) => tweak.category === 'xbox' && selected.includes(tweak.id))}
+                  onClick={() =>
+                    void runApply(
+                      TWEAKS.filter((tweak) => tweak.category === 'xbox' && selected.includes(tweak.id)).map(
+                        (tweak) => tweak.id
+                      )
+                    )
+                  }
+                >
+                  {busy ? 'Aplicando…' : 'Aplicar selecionados'}
+                </button>
+              </div>
+            </div>
+            <div className="banner">
+              Desative serviços Xbox somente se não usa esses recursos. O Windows pode não oferecer
+              ganho perceptível de FPS; cada serviço salva seu estado anterior para reversão.
+            </div>
+            <div className="list">
+              {TWEAKS.filter((tweak) => tweak.category === 'xbox').map((tweak) => {
+                const tweakStatus = status.find((item) => item.id === tweak.id)
+                return (
+                  <label key={tweak.id} className="tweak">
+                    <input
+                      type="checkbox"
+                      checked={selected.includes(tweak.id)}
+                      onChange={() => toggle(tweak.id)}
+                    />
+                    <div>
+                      <h4>{tweak.title}</h4>
+                      <p>{tweak.blurb}</p>
+                      <div className="meta">
+                        <span className={`pill ${tweak.risk}`}>{tweak.risk}</span>
+                        {tweak.requiresAdmin && <span className="pill">admin</span>}
+                      </div>
+                      <p>{tweak.detail}</p>
+                    </div>
+                    <div className={tweakStatus?.applied ? 'status on' : 'status'}>
+                      {tweakStatus?.applied ? 'ATIVA' : 'padrão'}
+                      <br />
+                      {tweakStatus?.current && tweakStatus.current !== 'MISSING'
+                        ? tweakStatus.current
+                        : '—'}
                     </div>
                   </label>
                 )
@@ -421,8 +502,9 @@ export default function App() {
             </p>
             <h3>O que este app faz de propósito</h3>
             <p>
-              Power plan, Game Mode, HAGS, overlay Xbox, visuais, mouse raw, QoS multimídia e
-              SysMain em SSD. Tudo opt-in, com risco marcado.
+              Power plan, Game Mode, HAGS, overlay Xbox, visuais, mouse raw, QoS multimídia,
+              SysMain em SSD e o serviço opcional de telemetria. Ajustes Xbox ficam na aba Xbox.
+              Tudo opt-in, com risco marcado.
             </p>
             <h3>O que ele recusa</h3>
             <p>

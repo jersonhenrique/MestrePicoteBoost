@@ -15,7 +15,8 @@ const OPTIONAL_SERVICES: Record<string, string> = {
   sysmain: 'SysMain',
   'xbox-auth': 'XblAuthManager',
   'xbox-game-save': 'XblGameSave',
-  'xbox-network': 'XboxNetApiSvc'
+  'xbox-network': 'XboxNetApiSvc',
+  telemetry: 'DiagTrack'
 }
 
 interface ServiceState {
@@ -50,8 +51,21 @@ async function remember(id: string, data: Record<string, string>): Promise<void>
   await saveSnapshot(snap)
 }
 
-function psJson(command: string): string {
-  return `${command} | ConvertTo-Json -Compress -Depth 6`
+export function parseSystemInfoOutput(json: string, admin: boolean): SystemInfo {
+  const parsed = JSON.parse(json) as Partial<Omit<SystemInfo, 'isAdmin'>>
+  const disks = Array.isArray(parsed.disks) ? parsed.disks : parsed.disks ? [parsed.disks] : []
+  return {
+    computer: parsed.computer || 'PC',
+    os: parsed.os || 'Windows',
+    cpu: parsed.cpu || 'CPU não detectada',
+    cores: Number(parsed.cores) || 0,
+    threads: Number(parsed.threads) || 0,
+    gpu: parsed.gpu || 'GPU não detectada',
+    ramGB: Number(parsed.ramGB) || 0,
+    ramFreeGB: Number(parsed.ramFreeGB) || 0,
+    disks,
+    isAdmin: admin
+  }
 }
 
 export async function isAdmin(): Promise<boolean> {
@@ -63,46 +77,45 @@ export async function isAdmin(): Promise<boolean> {
 
 export async function getSystemInfo(): Promise<SystemInfo> {
   const admin = await isAdmin()
-  const json = await runPsSafe(
-    psJson(`
-$cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
-$gpu = @(Get-CimInstance Win32_VideoController | Where-Object { $_.Name -notmatch 'Oray|Remote|Basic Display' } | Select-Object -First 1)
-$os = Get-CimInstance Win32_OperatingSystem
-$cs = Get-CimInstance Win32_ComputerSystem
-$disks = @(Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | ForEach-Object {
-  [pscustomobject]@{ name = $_.DeviceID; freeGB = [math]::Round(($_.FreeSpace/1GB),1); totalGB = [math]::Round(($_.Size/1GB),1) }
+  const { stdout } = await runPs(`
+$ErrorActionPreference = 'Stop'
+$processors = @(Get-CimInstance Win32_Processor -ErrorAction Stop)
+$cpuNames = @($processors | ForEach-Object { ([string]$_.Name).Trim() } | Where-Object { $_ } | Select-Object -Unique)
+$cpu = if ($cpuNames.Count -gt 0) { $cpuNames -join ' / ' } else { 'CPU não detectada' }
+$cores = [int](($processors | Measure-Object -Property NumberOfCores -Sum).Sum)
+$threads = [int](($processors | Measure-Object -Property NumberOfLogicalProcessors -Sum).Sum)
+$gpus = @(Get-CimInstance Win32_VideoController -ErrorAction Stop | ForEach-Object { ([string]$_.Name).Trim() } | Where-Object { $_ -and $_ -notmatch 'Oray|Remote|Basic Display' } | Select-Object -Unique)
+$gpu = if ($gpus.Count -gt 0) { $gpus -join ' / ' } else { 'GPU não detectada' }
+$os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+$cs = Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+$totalMemory = [double]$cs.TotalPhysicalMemory
+if ($totalMemory -le 0) {
+  $totalMemory = [double]((Get-CimInstance Win32_PhysicalMemory -ErrorAction SilentlyContinue | Measure-Object -Property Capacity -Sum).Sum)
+}
+$availableMemoryGB = [math]::Round(([double]$os.FreePhysicalMemory / 1MB), 1)
+$disks = @(Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" -ErrorAction SilentlyContinue | ForEach-Object {
+  if ($_.Size -gt 0) {
+    [pscustomobject]@{ name = $_.DeviceID; freeGB = [math]::Round(($_.FreeSpace / 1GB), 1); totalGB = [math]::Round(($_.Size / 1GB), 1) }
+  }
 })
 [pscustomobject]@{
   computer = $env:COMPUTERNAME
-  os = $os.Caption
-  cpu = ($cpu.Name).Trim()
-  cores = $cpu.NumberOfCores
-  threads = $cpu.NumberOfLogicalProcessors
-  gpu = $(if ($gpu.Count -gt 0) { $gpu[0].Name } else { 'GPU não detectada' })
-  ramGB = [math]::Round($cs.TotalPhysicalMemory/1GB,1)
-  ramFreeGB = [math]::Round($os.FreePhysicalMemory/1MB,1)
+  os = [string]$os.Caption
+  cpu = $cpu
+  cores = $cores
+  threads = $threads
+  gpu = $gpu
+  ramGB = [math]::Round(($totalMemory / 1GB), 1)
+  ramFreeGB = $availableMemoryGB
   disks = $disks
-}
+} | ConvertTo-Json -Compress -Depth 6
 `)
-  )
 
   try {
-    const parsed = JSON.parse(json) as Omit<SystemInfo, 'isAdmin'>
-    const disks = Array.isArray(parsed.disks) ? parsed.disks : parsed.disks ? [parsed.disks] : []
-    return { ...parsed, disks, isAdmin: admin }
-  } catch {
-    return {
-      computer: 'PC',
-      os: 'Windows',
-      cpu: 'CPU não lida',
-      cores: 0,
-      threads: 0,
-      gpu: 'GPU não lida',
-      ramGB: 0,
-      ramFreeGB: 0,
-      disks: [],
-      isAdmin: admin
-    }
+    return parseSystemInfoOutput(stdout, admin)
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    throw new Error(`Não foi possível interpretar os dados de hardware do Windows: ${reason}`)
   }
 }
 
@@ -400,7 +413,8 @@ New-ItemProperty -Path $path -Name 'MouseThreshold2' -PropertyType String -Value
     case 'sysmain':
     case 'xbox-auth':
     case 'xbox-game-save':
-    case 'xbox-network': {
+    case 'xbox-network':
+    case 'telemetry': {
       const serviceName = OPTIONAL_SERVICES[id]
       const previous = await getServiceState(serviceName)
       await remember(id, { startMode: previous.startMode, status: previous.status })
@@ -500,6 +514,7 @@ New-ItemProperty -Path $path -Name 'MouseThreshold2' -PropertyType String -Value
     case 'xbox-auth':
     case 'xbox-game-save':
     case 'xbox-network':
+    case 'telemetry':
       if (prev?.startMode && prev.status) {
         await restoreWindowsService(OPTIONAL_SERVICES[id], {
           startMode: prev.startMode,

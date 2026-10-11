@@ -42,9 +42,13 @@ beforeEach(async () => {
     SysMain: { status: 'Running', startMode: 'Auto' },
     XblAuthManager: { status: 'Running', startMode: 'Manual' },
     XblGameSave: { status: 'Running', startMode: 'Auto' },
-    XboxNetApiSvc: { status: 'Running', startMode: 'Manual' }
+    XboxNetApiSvc: { status: 'Running', startMode: 'Manual' },
+    DiagTrack: { status: 'Running', startMode: 'Auto' }
   }
-  runPs.mockReset().mockResolvedValue({ stdout: '', stderr: '' })
+  runPs.mockReset().mockImplementation(async (command: string) => ({
+    stdout: command.includes('Win32_Processor') ? state.hardwareJson : '',
+    stderr: ''
+  }))
   runPsSafe.mockReset().mockImplementation(async (command: string) => {
     if (command.includes('IsInRole')) return state.isAdmin
     if (command.includes('powercfg /getactivescheme')) return state.powerScheme
@@ -64,27 +68,27 @@ beforeEach(async () => {
 })
 
 describe('system and admin information', () => {
-  it('reports admin access and parses full system information with one disk', async () => {
+  it('reads CPU, all GPUs, RAM, and disks from the Windows hardware query', async () => {
     state.hardwareJson = JSON.stringify({
       computer: 'GAMING-PC',
       os: 'Windows 11',
-      cpu: 'Test CPU',
-      cores: 8,
-      threads: 16,
-      gpu: 'Test GPU',
+      cpu: 'AMD Ryzen 9 / AMD Ryzen 9',
+      cores: 12,
+      threads: 24,
+      gpu: 'NVIDIA RTX / AMD Radeon',
       ramGB: 32,
       ramFreeGB: 12,
-      disks: { name: 'C:', freeGB: 100, totalGB: 500 }
+      disks: [{ name: 'C:', freeGB: 100, totalGB: 500 }]
     })
 
     await expect(engine.isAdmin()).resolves.toBe(true)
     await expect(engine.getSystemInfo()).resolves.toEqual({
       computer: 'GAMING-PC',
       os: 'Windows 11',
-      cpu: 'Test CPU',
-      cores: 8,
-      threads: 16,
-      gpu: 'Test GPU',
+      cpu: 'AMD Ryzen 9 / AMD Ryzen 9',
+      cores: 12,
+      threads: 24,
+      gpu: 'NVIDIA RTX / AMD Radeon',
       ramGB: 32,
       ramFreeGB: 12,
       disks: [{ name: 'C:', freeGB: 100, totalGB: 500 }],
@@ -92,18 +96,13 @@ describe('system and admin information', () => {
     })
   })
 
-  it('returns hardware fallback values when CIM output is invalid and user is not admin', async () => {
+  it('reports malformed Windows hardware output instead of silently hiding the scan failure', async () => {
     state.isAdmin = 'false'
     state.hardwareJson = 'invalid JSON'
 
-    await expect(engine.getSystemInfo()).resolves.toMatchObject({
-      computer: 'PC',
-      os: 'Windows',
-      cpu: 'CPU não lida',
-      gpu: 'GPU não lida',
-      disks: [],
-      isAdmin: false
-    })
+    await expect(engine.getSystemInfo()).rejects.toThrow(
+      'Não foi possível interpretar os dados de hardware do Windows'
+    )
   })
 })
 
@@ -126,6 +125,7 @@ describe('tweak status, apply, and revert operations', () => {
     state.serviceStates.XblAuthManager.status = 'Stopped'
     state.serviceStates.XblGameSave.status = 'Stopped'
     state.serviceStates.XboxNetApiSvc.status = 'Stopped'
+    state.serviceStates.DiagTrack.status = 'Stopped'
     state.powerScheme = '(SCHEME_CURRENT) e9a42b02-d5df-448d-aa00-03f14749eb61 (Ultimate Performance)'
 
     const statuses = await engine.getStatuses()
@@ -160,6 +160,24 @@ describe('tweak status, apply, and revert operations', () => {
     expect(reverted.log.every((line) => line.startsWith('REV'))).toBe(true)
     expect(runPs).toHaveBeenCalledWith(expect.stringContaining("sc.exe config 'XblAuthManager' start= demand"))
     expect(runPs).toHaveBeenCalledWith(expect.stringContaining("Start-Service -Name 'XblAuthManager'"))
+    expect(runPs).toHaveBeenCalledWith(expect.stringContaining("Set-Service -Name 'DiagTrack' -StartupType Disabled"))
+    expect(runPs).toHaveBeenCalledWith(expect.stringContaining("sc.exe config 'DiagTrack' start= auto"))
+  })
+
+  it('disables Windows telemetry only when requested and restores its saved startup mode', async () => {
+    const applied = await engine.applyTweaks(['telemetry'])
+    expect(applied.results).toEqual([
+      { id: 'telemetry', ok: true, message: 'DiagTrack parado e desativado' }
+    ])
+    expect(runPs).toHaveBeenCalledWith(expect.stringContaining("Set-Service -Name 'DiagTrack' -StartupType Disabled"))
+
+    const snapshot = JSON.parse(await readFile(join(dataRoot, 'picote-snapshot.json'), 'utf8'))
+    expect(snapshot.telemetry).toEqual({ startMode: 'Auto', status: 'Running' })
+
+    const reverted = await engine.revertTweaks(['telemetry'])
+    expect(reverted.results[0].ok).toBe(true)
+    expect(runPs).toHaveBeenCalledWith(expect.stringContaining("sc.exe config 'DiagTrack' start= auto"))
+    expect(runPs).toHaveBeenCalledWith(expect.stringContaining("Start-Service -Name 'DiagTrack'"))
   })
 
   it('returns a failure result for an unknown tweak without aborting the report', async () => {

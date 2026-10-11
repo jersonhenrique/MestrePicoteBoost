@@ -24,13 +24,18 @@ renderer (React)  →  preload (contextBridge)  →  main (Electron)
 | Sistema | efeitos visuais, transparência, animações, apps em background |
 | Rede | NetworkThrottlingIndex, TcpNoDelay (avançado) |
 | Input | precisão do ponteiro off |
-| Serviços | SysMain em SSD; Xbox Live Auth, Game Save e Networking opcionais |
+| Serviços | SysMain em SSD; telemetria Windows opcional |
+| Xbox | Game Mode, Game DVR, Xbox Live Auth, Game Save e Networking |
 
 Fora de escopo de propósito: Defender, firewall, UAC, BCDEdit, “limpa registro”.
 
 Os serviços Xbox são avançados e desativados apenas sob escolha explícita. Isso pode interromper
 login, multiplayer, convites ou sincronização de saves do Xbox/Game Pass. O ganho de desempenho
 depende do PC e não é garantido; cada alteração salva o estado anterior para reversão.
+
+A aba **Xbox** reúne os ajustes do Game Mode, Game DVR e serviços Xbox. A leitura de CPU, GPUs,
+memória e discos é feita no Windows via CIM; o app soma processadores físicos, mostra adaptadores
+gráficos detectados e usa a memória física instalada como fonte principal.
 
 ## Rodar
 

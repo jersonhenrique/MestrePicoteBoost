@@ -1,5 +1,5 @@
 export type Risk = 'seguro' | 'moderado' | 'avancado'
-export type Category = 'energia' | 'grafico' | 'rede' | 'sistema' | 'entrada' | 'servicos'
+export type Category = 'energia' | 'grafico' | 'rede' | 'sistema' | 'entrada' | 'servicos' | 'xbox'
 
 export interface Tweak {
   id: string
@@ -18,7 +18,8 @@ export const CATEGORIES: { id: Category; label: string }[] = [
   { id: 'rede', label: 'Rede' },
   { id: 'sistema', label: 'Sistema' },
   { id: 'entrada', label: 'Mouse / input' },
-  { id: 'servicos', label: 'Serviços' }
+  { id: 'servicos', label: 'Serviços' },
+  { id: 'xbox', label: 'Xbox' }
 ]
 
 export const TWEAKS: Tweak[] = [
@@ -55,7 +56,7 @@ export const TWEAKS: Tweak[] = [
     title: 'Game Mode do Windows',
     blurb: 'Prioriza o jogo e reduz tarefas em segundo plano.',
     detail: 'Liga Auto Game Mode nas chaves do Game Bar.',
-    category: 'grafico',
+    category: 'xbox',
     risk: 'seguro',
     requiresAdmin: false
   },
@@ -74,7 +75,7 @@ export const TWEAKS: Tweak[] = [
     title: 'Desligar Xbox Game DVR / captura',
     blurb: 'Overlay e gravação em background comem FPS.',
     detail: 'Desativa AppCapture e GameDVR_Enabled no perfil do usuário.',
-    category: 'grafico',
+    category: 'xbox',
     risk: 'seguro',
     requiresAdmin: false
   },
@@ -165,7 +166,7 @@ export const TWEAKS: Tweak[] = [
     title: 'Xbox Live Auth Manager',
     blurb: 'Se não usa Xbox Live/Game Pass; desativar pode interromper login e recursos sociais.',
     detail: 'Desativa XblAuthManager. Pode impedir autenticação Xbox, recursos sociais e alguns jogos do Game Pass.',
-    category: 'servicos',
+    category: 'xbox',
     risk: 'avancado',
     requiresAdmin: true
   },
@@ -174,7 +175,7 @@ export const TWEAKS: Tweak[] = [
     title: 'Xbox Live Game Save',
     blurb: 'Se não usa Xbox cloud save; pode impedir sincronização de saves entre PCs.',
     detail: 'Desativa XblGameSave. Não use se depender de saves sincronizados pela Xbox network.',
-    category: 'servicos',
+    category: 'xbox',
     risk: 'avancado',
     requiresAdmin: true
   },
@@ -183,6 +184,16 @@ export const TWEAKS: Tweak[] = [
     title: 'Xbox Live Networking Service',
     blurb: 'Se não usa Xbox Live; pode afetar multiplayer e convites em jogos Xbox.',
     detail: 'Desativa XboxNetApiSvc. Pode afetar partidas, convites e recursos online de jogos Xbox/Game Pass.',
+    category: 'xbox',
+    risk: 'avancado',
+    requiresAdmin: true
+  },
+  {
+    id: 'telemetry',
+    title: 'Telemetria do Windows (DiagTrack)',
+    blurb: 'Desativa a coleta opcional de diagnóstico em segundo plano.',
+    detail:
+      'Para e desativa Connected User Experiences and Telemetry (DiagTrack). Não garante ganho de FPS e pode limitar diagnósticos do Windows. O estado anterior é salvo para reversão.',
     category: 'servicos',
     risk: 'avancado',
     requiresAdmin: true

@@ -23,4 +23,13 @@ describe('tweak catalog and profiles', () => {
     expect(TWEAKS.every((tweak) => typeof tweak.requiresAdmin === 'boolean')).toBe(true)
     expect(TWEAKS.filter((tweak) => tweak.rebootHint).every((tweak) => tweak.requiresAdmin)).toBe(true)
   })
+
+  it('keeps every Xbox-related tweak in the Xbox category and telemetry in services', () => {
+    const xboxIds = ['game-mode', 'game-dvr', 'xbox-auth', 'xbox-game-save', 'xbox-network']
+
+    for (const id of xboxIds) {
+      expect(TWEAKS.find((tweak) => tweak.id === id)?.category).toBe('xbox')
+    }
+    expect(TWEAKS.find((tweak) => tweak.id === 'telemetry')?.category).toBe('servicos')
+  })
 })
