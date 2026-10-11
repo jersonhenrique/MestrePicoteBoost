@@ -290,6 +290,54 @@ input {
   border-color: var(--moss);
 }
 
+.restore-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 18px;
+  max-width: 520px;
+}
+
+.restore-form label {
+  color: var(--mute);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.restore-form input {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--bone);
+  padding: 11px 12px;
+}
+
+.empty-state {
+  background: var(--bg-2);
+  border: 1px dashed var(--line);
+  color: var(--mute);
+  padding: 18px;
+}
+
+.restore-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  border: 1px solid var(--line);
+  background: var(--bg-2);
+  padding: 14px 16px;
+}
+
+.restore-card h4 {
+  margin: 0 0 4px;
+}
+
+.restore-card p {
+  margin: 0;
+  color: var(--mute);
+}
+
 .list {
   display: flex;
   flex-direction: column;

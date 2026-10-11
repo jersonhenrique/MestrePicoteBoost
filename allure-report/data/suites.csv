@@ -1,0 +1,2 @@
+"DESCRIPTION","DURATION IN MS","NAME","PARENT SUITE","START TIME","STATUS","STOP TIME","SUB SUITE","SUITE","TEST CLASS","TEST METHOD"
+"","482","aplica o fluxo completo da aplicação com criação de ponto de restauração","chromium","2026-10-11","passed","2026-10-11","","app.spec.ts","",""

@@ -41,6 +41,14 @@ Build:
 npm run build
 ```
 
+Testes:
+
+```bash
+npm test
+npm run test:e2e
+npm run allure:report
+```
+
 Windows 10/11. Node 20+.
 
 ## Uso

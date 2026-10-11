@@ -1,6 +1,15 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { join } from 'node:path'
-import { applyTweaks, getStatuses, getSystemInfo, isAdmin, revertTweaks } from './engine'
+import {
+  applyTweaks,
+  createRestorePoint,
+  getStatuses,
+  getSystemInfo,
+  isAdmin,
+  listRestorePoints,
+  restoreFromPoint,
+  revertTweaks
+} from './engine'
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -37,6 +46,9 @@ app.whenReady().then(() => {
   ipcMain.handle('opt:status', () => getStatuses())
   ipcMain.handle('opt:apply', (_e, ids: string[]) => applyTweaks(ids))
   ipcMain.handle('opt:revert', (_e, ids?: string[]) => revertTweaks(ids))
+  ipcMain.handle('restore:create', (_e, description?: string) => createRestorePoint(description))
+  ipcMain.handle('restore:list', () => listRestorePoints())
+  ipcMain.handle('restore:apply', (_e, id: string) => restoreFromPoint(id))
 
   createWindow()
   app.on('activate', () => {

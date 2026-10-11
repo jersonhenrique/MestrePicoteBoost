@@ -1,8 +1,9 @@
 import { app } from 'electron'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { TWEAKS } from '../shared/catalog'
-import type { ActionResult, ApplyReport, SystemInfo, TweakStatus } from '../shared/types'
+import { RestorePointService, RestorePointStore } from '../shared/restore'
+import type { ActionResult, ApplyReport, RestorePoint, SystemInfo, TweakStatus } from '../shared/types'
 import { runPs, runPsSafe } from './powershell'
 
 interface Snapshot {
@@ -28,6 +29,9 @@ async function saveSnapshot(snap: Snapshot): Promise<void> {
   await mkdir(app.getPath('userData'), { recursive: true })
   await writeFile(storePath(), JSON.stringify(snap, null, 2), 'utf8')
 }
+
+const restoreStore = new RestorePointStore(join(app.getPath('userData'), 'picote-restore-points.json'))
+const restoreService = new RestorePointService(restoreStore)
 
 async function remember(id: string, data: Record<string, string>): Promise<void> {
   const snap = await loadSnapshot()
@@ -450,6 +454,26 @@ New-ItemProperty -Path $path -Name 'MouseThreshold2' -PropertyType String -Value
   }
   void dwordOrString
   return `Revertido: ${id}`
+}
+
+export async function listRestorePoints(): Promise<RestorePoint[]> {
+  return restoreService.listSnapshots()
+}
+
+export async function createRestorePoint(description?: string): Promise<RestorePoint> {
+  const statuses = await getStatuses()
+  const appliedIds = TWEAKS.filter((tweak) => statuses.some((status) => status.id === tweak.id && status.applied)).map(
+    (tweak) => tweak.id
+  )
+  return restoreService.createSnapshot(description, appliedIds)
+}
+
+export async function restoreFromPoint(id: string): Promise<ApplyReport> {
+  const point = await restoreService.restoreSnapshot(id)
+  if (!point) {
+    throw new Error(`Ponto de restauração não encontrado: ${id}`)
+  }
+  return revertTweaks(point.appliedIds)
 }
 
 export async function applyTweaks(ids: string[]): Promise<ApplyReport> {

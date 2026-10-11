@@ -9,20 +9,32 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "start": "npm run dev"
+    "start": "npm run dev",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "allure:report": "allure generate allure-results --clean -o allure-report",
+    "ci:test": "npm run test && npm run test:e2e && npm run allure:report"
   },
   "dependencies": {
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.0",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
     "@types/node": "^24.5.2",
     "@types/react": "^19.1.13",
     "@types/react-dom": "^19.1.9",
     "@vitejs/plugin-react": "^5.0.3",
+    "allure-commandline": "^2.46.1",
+    "allure-playwright": "^3.13.0",
     "electron": "^38.8.6",
     "electron-vite": "^4.0.1",
+    "jsdom": "^30.1.2",
     "typescript": "^5.9.2",
-    "vite": "^7.1.7"
+    "vite": "^7.1.7",
+    "vitest": "^5.0.3"
   }
 }

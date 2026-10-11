@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CATEGORIES, PROFILES, TWEAKS, type Category } from '../../shared/catalog'
-import type { ApplyReport, SystemInfo, TweakStatus } from '../../shared/types'
+import type { ApplyReport, RestorePoint, SystemInfo, TweakStatus } from '../../shared/types'
 
-type Page = 'painel' | 'otimizacoes' | 'restaurar' | 'sobre'
+type Page = 'ponto-restauracao' | 'painel' | 'otimizacoes' | 'restaurar' | 'sobre'
 
 function mockSystem(): SystemInfo {
   return {
@@ -20,12 +20,14 @@ function mockSystem(): SystemInfo {
 }
 
 export default function App() {
-  const [page, setPage] = useState<Page>('painel')
+  const [page, setPage] = useState<Page>('ponto-restauracao')
   const [system, setSystem] = useState<SystemInfo>(mockSystem)
   const [status, setStatus] = useState<TweakStatus[]>([])
   const [selected, setSelected] = useState<string[]>(PROFILES[0].tweakIds)
   const [profile, setProfile] = useState('ranked')
   const [filter, setFilter] = useState<Category | 'todas'>('todas')
+  const [restoreLabel, setRestoreLabel] = useState('')
+  const [restorePoints, setRestorePoints] = useState<RestorePoint[]>([])
   const [busy, setBusy] = useState(false)
   const [log, setLog] = useState('Pronto. Escolha um perfil e aplique.')
   const [error, setError] = useState('')
@@ -45,8 +47,19 @@ export default function App() {
     }
   }
 
+  async function refreshRestorePoints() {
+    try {
+      if (!window.picote) return
+      const points = await window.picote.listRestorePoints()
+      setRestorePoints(points)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
   useEffect(() => {
     void refresh()
+    void refreshRestorePoints()
   }, [])
 
   const appliedCount = status.filter((s) => s.applied).length
@@ -96,6 +109,34 @@ export default function App() {
     }
   }
 
+  async function createRestorePoint() {
+    setBusy(true)
+    try {
+      const point = await window.picote.createRestorePoint(restoreLabel.trim() || undefined)
+      setLog(`Ponto de restauração criado: ${point.name}\n${point.description}`)
+      setRestoreLabel('')
+      await refreshRestorePoints()
+    } catch (err) {
+      setLog(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function restorePointById(id: string) {
+    setBusy(true)
+    try {
+      const report = await window.picote.restoreFromPoint(id)
+      setLog(report.log.join('\n'))
+      await refresh()
+      await refreshRestorePoints()
+    } catch (err) {
+      setLog(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="app">
       <aside className="side">
@@ -107,6 +148,12 @@ export default function App() {
           </div>
         </div>
         <nav className="nav">
+          <button
+            className={page === 'ponto-restauracao' ? 'active' : ''}
+            onClick={() => setPage('ponto-restauracao')}
+          >
+            Ponto de restauração
+          </button>
           <button className={page === 'painel' ? 'active' : ''} onClick={() => setPage('painel')}>
             Painel
           </button>
@@ -131,6 +178,54 @@ export default function App() {
       </aside>
 
       <main className="main">
+        {page === 'ponto-restauracao' && (
+          <>
+            <div className="hero">
+              <div>
+                <h2>Ponto de restauração</h2>
+                <p>
+                  Grave um ponto do estado atual do sistema antes de mexer em energia, rede ou
+                  serviços. A partir dele você pode restaurar rapidamente o que foi alterado.
+                </p>
+              </div>
+              <button className="btn primary" disabled={busy} onClick={() => void createRestorePoint()}>
+                {busy ? 'Criando…' : 'Criar ponto'}
+              </button>
+            </div>
+            <div className="restore-form">
+              <label htmlFor="restore-label">Descrição do ponto</label>
+              <input
+                id="restore-label"
+                value={restoreLabel}
+                onChange={(event) => setRestoreLabel(event.target.value)}
+                placeholder="Ex.: antes do perfil Ranked"
+              />
+            </div>
+            <div className="list">
+              {restorePoints.length === 0 ? (
+                <div className="empty-state">Nenhum ponto de restauração criado ainda.</div>
+              ) : (
+                restorePoints.map((point) => (
+                  <div key={point.id} className="restore-card">
+                    <div>
+                      <h4>{point.name}</h4>
+                      <p>{point.description}</p>
+                      <div className="meta">
+                        <span className="pill">{point.tweakCount} ajustes</span>
+                        <span className="pill">{new Date(point.createdAt).toLocaleString('pt-BR')}</span>
+                      </div>
+                    </div>
+                    <button className="btn ghost" onClick={() => void restorePointById(point.id)}>
+                      Restaurar este ponto
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="log">{log}</div>
+          </>
+        )}
+
         {page === 'painel' && (
           <>
             <div className="hero">

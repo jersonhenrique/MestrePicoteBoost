@@ -33,3 +33,12 @@ export interface ApplyReport {
   results: ActionResult[]
   log: string[]
 }
+
+export interface RestorePoint {
+  id: string
+  name: string
+  description: string
+  createdAt: string
+  appliedIds: string[]
+  tweakCount: number
+}
