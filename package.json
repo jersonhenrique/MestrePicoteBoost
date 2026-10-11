@@ -1,0 +1,28 @@
+{
+  "name": "mestre-picote-boost",
+  "version": "1.0.0",
+  "description": "Otimizações para PC gamer — aplicar, medir e reverter com segurança",
+  "author": "MestrePicoteBoost",
+  "main": "./out/main/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "start": "npm run dev"
+  },
+  "dependencies": {
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^5.0.3",
+    "electron": "^38.8.6",
+    "electron-vite": "^4.0.1",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.7"
+  }
+}
