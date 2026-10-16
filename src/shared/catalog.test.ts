@@ -24,12 +24,20 @@ describe('tweak catalog and profiles', () => {
     expect(TWEAKS.filter((tweak) => tweak.rebootHint).every((tweak) => tweak.requiresAdmin)).toBe(true)
   })
 
-  it('keeps every Xbox-related tweak in the Xbox category and telemetry in services', () => {
-    const xboxIds = ['game-mode', 'game-dvr', 'xbox-auth', 'xbox-game-save', 'xbox-network']
+  it('excludes network and Xbox tweaks while keeping telemetry in services', () => {
+    const removedIds = [
+      'network-throttle',
+      'nagle',
+      'game-mode',
+      'game-dvr',
+      'xbox-auth',
+      'xbox-game-save',
+      'xbox-network'
+    ]
 
-    for (const id of xboxIds) {
-      expect(TWEAKS.find((tweak) => tweak.id === id)?.category).toBe('xbox')
-    }
+    expect(removedIds.every((id) => !TWEAKS.some((tweak) => tweak.id === id))).toBe(true)
+    expect(CATEGORIES.map((category) => category.id)).not.toContain('rede')
+    expect(CATEGORIES.map((category) => category.id)).not.toContain('xbox')
     expect(TWEAKS.find((tweak) => tweak.id === 'telemetry')?.category).toBe('servicos')
   })
 })

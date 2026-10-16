@@ -34,6 +34,8 @@ export interface ApplyReport {
   log: string[]
 }
 
+export type NetworkCommand = 'renew-ip' | 'flush-dns' | 'reset-winsock'
+
 export interface RestorePoint {
   id: string
   name: string

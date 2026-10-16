@@ -31,7 +31,6 @@ test('validates all user-facing application workflows with screenshots and final
       isAdmin: async () => true,
       getStatus: async () => [
         { id: 'ultimate-power', applied: true, current: 'Ultimate Performance' },
-        { id: 'game-mode', applied: false, current: '0' },
         { id: 'mouse-accel', applied: true, current: '0' }
       ],
       apply: async (ids: string[]) => ({
@@ -39,7 +38,7 @@ test('validates all user-facing application workflows with screenshots and final
         log: ids.map((id) => `OK ${id} — Aplicado no teste`)
       }),
       revert: async (ids?: string[]) => ({
-        results: (ids ?? ['ultimate-power', 'game-mode']).map((id) => ({
+        results: (ids ?? ['ultimate-power']).map((id) => ({
           id,
           ok: true,
           message: 'Revertido no teste'
@@ -62,7 +61,8 @@ test('validates all user-facing application workflows with screenshots and final
       restoreFromPoint: async (id: string) => ({
         results: [{ id, ok: true, message: 'Ponto restaurado no teste' }],
         log: [`Ponto restaurado: ${id}`]
-      })
+      }),
+      runNetworkCommand: async (command: string) => `Comando concluído: ${command}`
     }
     Object.defineProperty(window, 'picote', { value: mockApi, configurable: true })
   })
@@ -96,7 +96,7 @@ test('validates all user-facing application workflows with screenshots and final
     await expect(page.getByText('NVIDIA RTX 4080')).toBeVisible()
     await expect(page.getByText('16 GB livres de 32 GB')).toBeVisible()
     await page.getByRole('button', { name: 'Atualizar scan' }).click()
-    await expect(page.getByText('2/19 otimizações ativas')).toBeVisible()
+    await expect(page.getByText('2/12 otimizações ativas')).toBeVisible()
     await attachStepScreenshot(page, '05 - painel, hardware, score e atualização')
 
     for (let index = 0; index < 4; index += 1) {
@@ -111,7 +111,7 @@ test('validates all user-facing application workflows with screenshots and final
 
   await allure.step('Filtrar catálogo, selecionar os visíveis e aplicar ajustes', async () => {
     await page.getByRole('button', { name: 'Otimizações', exact: true }).click()
-    await expect(page.locator('.tweak')).toHaveCount(14)
+    await expect(page.locator('.tweak')).toHaveCount(12)
     await page.getByRole('button', { name: 'Serviços', exact: true }).click()
     await expect(page.locator('.tweak')).toHaveCount(2)
     await expect(page.getByText('Telemetria do Windows (DiagTrack)')).toBeVisible()
@@ -127,20 +127,33 @@ test('validates all user-facing application workflows with screenshots and final
     await expect(page.getByText(/OK .*Aplicado no teste/)).toBeVisible()
     await attachStepScreenshot(page, '09 - resultado de aplicar ajustes')
     await page.getByRole('button', { name: 'Todas', exact: true }).click()
-    await expect(page.locator('.tweak')).toHaveCount(14)
+    await expect(page.locator('.tweak')).toHaveCount(12)
     await attachStepScreenshot(page, '10 - catálogo completo')
   })
 
-  await allure.step('Manter os itens Xbox na aba dedicada e aplicar somente a seleção Xbox', async () => {
-    await page.getByRole('button', { name: 'Xbox', exact: true }).click()
-    await expect(page.getByRole('heading', { name: 'Xbox', exact: true })).toBeVisible()
-    await expect(page.locator('.tweak')).toHaveCount(5)
-    await expect(page.getByText('Game Mode do Windows')).toBeVisible()
-    await expect(page.getByText('Xbox Live Networking Service')).toBeVisible()
-    await page.getByRole('button', { name: 'Marcar itens Xbox' }).click()
-    await page.getByRole('button', { name: 'Aplicar selecionados' }).click()
-    await expect(page.getByText(/OK .*Aplicado no teste/)).toBeVisible()
-    await attachStepScreenshot(page, '11 - aba Xbox com itens aplicados')
+  await allure.step('Manter o Xbox removido e disponibilizar a aba Rede', async () => {
+    await expect(page.getByRole('button', { name: 'Xbox', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Rede', exact: true })).toHaveCount(1)
+    await expect(page.getByText('Game Mode do Windows')).toHaveCount(0)
+    await expect(page.getByText('TcpNoDelay (desligar Nagle)')).toHaveCount(0)
+    await attachStepScreenshot(page, '11 - aba Rede disponível sem itens Xbox no catálogo')
+  })
+
+  await allure.step('Executar os comandos da aba Rede somente após ação explícita', async () => {
+    await page.getByRole('button', { name: 'Rede', exact: true }).click()
+    await expect(page.getByRole('heading', { name: 'Rede', exact: true })).toBeVisible()
+    await expect(page.getByText('ipconfig /renew')).toBeVisible()
+    await expect(page.getByText('ipconfig /flushdns')).toBeVisible()
+    await expect(page.getByText('netsh winsock reset')).toBeVisible()
+
+    await page.getByRole('button', { name: 'Renovar IP' }).click()
+    await expect(page.getByRole('status')).toContainText('renew-ip')
+    await page.getByRole('button', { name: 'Limpar cache DNS' }).click()
+    await expect(page.getByRole('status')).toContainText('flush-dns')
+    page.once('dialog', (dialog) => void dialog.accept())
+    await page.getByRole('button', { name: 'Redefinir Winsock' }).click()
+    await expect(page.getByRole('status')).toContainText('reset-winsock')
+    await attachStepScreenshot(page, '12 - comandos de rede')
   })
 
   await allure.step('Reverter um item e depois todos os ajustes', async () => {

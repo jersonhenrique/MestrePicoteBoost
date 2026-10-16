@@ -25,6 +25,7 @@ const { handlers, app, browserWindow, ipcMain, shell, engine } = vi.hoisted(() =
       getSystemInfo: vi.fn(),
       isAdmin: vi.fn(),
       listRestorePoints: vi.fn(),
+      runNetworkCommand: vi.fn(),
       restoreFromPoint: vi.fn(),
       revertTweaks: vi.fn()
     }
@@ -53,12 +54,13 @@ describe('Electron main process IPC and window lifecycle', () => {
       'opt:revert',
       'restore:create',
       'restore:list',
-      'restore:apply'
+      'restore:apply',
+      'network:run'
     ])
   })
 
   it('passes channel arguments to engine operations', async () => {
-    const ids = ['game-mode', 'mouse-accel']
+    const ids = ['visual-fx', 'mouse-accel']
     const fakeEvent = {}
 
     expect(await handlers.get('system:info')?.(fakeEvent)).toBe(engine.getSystemInfo.mock.results.at(-1)?.value)
@@ -69,6 +71,7 @@ describe('Electron main process IPC and window lifecycle', () => {
     await handlers.get('restore:create')?.(fakeEvent, 'before changes')
     await handlers.get('restore:list')?.(fakeEvent)
     await handlers.get('restore:apply')?.(fakeEvent, 'point-1')
+    await handlers.get('network:run')?.(fakeEvent, 'flush-dns')
 
     expect(engine.getSystemInfo).toHaveBeenCalled()
     expect(engine.isAdmin).toHaveBeenCalled()
@@ -78,6 +81,7 @@ describe('Electron main process IPC and window lifecycle', () => {
     expect(engine.createRestorePoint).toHaveBeenCalledWith('before changes')
     expect(engine.listRestorePoints).toHaveBeenCalled()
     expect(engine.restoreFromPoint).toHaveBeenCalledWith('point-1')
+    expect(engine.runNetworkCommand).toHaveBeenCalledWith('flush-dns')
   })
 
   it('opens external links outside Electron and registers window lifecycle handlers', () => {

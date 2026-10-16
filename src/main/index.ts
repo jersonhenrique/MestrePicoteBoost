@@ -7,6 +7,7 @@ import {
   getSystemInfo,
   isAdmin,
   listRestorePoints,
+  runNetworkCommand,
   restoreFromPoint,
   revertTweaks
 } from './engine'
@@ -49,6 +50,9 @@ app.whenReady().then(() => {
   ipcMain.handle('restore:create', (_e, description?: string) => createRestorePoint(description))
   ipcMain.handle('restore:list', () => listRestorePoints())
   ipcMain.handle('restore:apply', (_e, id: string) => restoreFromPoint(id))
+  ipcMain.handle('network:run', (_e, command: Parameters<typeof runNetworkCommand>[0]) =>
+    runNetworkCommand(command)
+  )
 
   createWindow()
   app.on('activate', () => {

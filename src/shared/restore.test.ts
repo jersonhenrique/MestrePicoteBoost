@@ -6,10 +6,10 @@ import { RestorePointEntry, RestorePointService, RestorePointStore } from './res
 
 describe('RestorePointEntry', () => {
   it('serializa e mantém o estado do ponto de restauração', () => {
-    const entry = new RestorePointEntry('Ponto principal', 'Antes do teste', ['game-mode', 'visual-fx'])
+    const entry = new RestorePointEntry('Ponto principal', 'Antes do teste', ['visual-fx', 'mouse-accel'])
 
     expect(entry.tweakCount).toBe(2)
-    expect(entry.toJSON().appliedIds).toEqual(['game-mode', 'visual-fx'])
+    expect(entry.toJSON().appliedIds).toEqual(['visual-fx', 'mouse-accel'])
     expect(entry.name).toBe('Ponto principal')
   })
 })
@@ -20,12 +20,12 @@ describe('RestorePointStore', () => {
     const filePath = join(dir, 'restore.json')
     const store = new RestorePointStore(filePath)
 
-    await store.create('Ponto 1', 'Antes da otimização', ['game-mode'])
+    await store.create('Ponto 1', 'Antes da otimização', ['visual-fx'])
     const points = await store.list()
 
     expect(points).toHaveLength(1)
     expect(points[0].description).toBe('Antes da otimização')
-    expect(await readFile(filePath, 'utf8')).toContain('game-mode')
+    expect(await readFile(filePath, 'utf8')).toContain('visual-fx')
 
     await rm(dir, { recursive: true, force: true })
   })

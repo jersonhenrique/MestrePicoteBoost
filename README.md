@@ -13,29 +13,34 @@ renderer (React)  →  preload (contextBridge)  →  main (Electron)
 
 - A UI nunca fala com o registro direto.
 - Cada apply guarda o valor anterior em `%APPDATA%/mestre-picote-boost/picote-snapshot.json`.
-- Tweaks de energia/rede/serviços pedem **Executar como administrador**.
+- Tweaks de energia/serviços pedem **Executar como administrador**.
 
 ## O que entra no catálogo
 
 | Área | Exemplos |
 | --- | --- |
 | Energia | Ultimate Performance, USB selective suspend, PCIe ASPM |
-| Gráfico | Game Mode, HAGS, Xbox DVR off, MMCSS Games |
+| Gráfico | HAGS, MMCSS Games |
 | Sistema | efeitos visuais, transparência, animações, apps em background |
-| Rede | NetworkThrottlingIndex, TcpNoDelay (avançado) |
 | Input | precisão do ponteiro off |
 | Serviços | SysMain em SSD; telemetria Windows opcional |
-| Xbox | Game Mode, Game DVR, Xbox Live Auth, Game Save e Networking |
+
+## Ações de rede
+
+A aba **Rede** disponibiliza ações manuais, executadas somente após clicar no botão:
+
+- `ipconfig /renew`: solicita a renovação do endereço IP via DHCP.
+- `ipconfig /flushdns`: limpa o cache local de DNS.
+- `netsh winsock reset`: redefine o catálogo Winsock; pode ajudar com problemas de conectividade
+  Wi-Fi ou Ethernet e exige reiniciar o computador.
+
+Execute o app como Administrador. A renovação do IP ou a redefinição do Winsock pode interromper
+temporariamente a conexão.
 
 Fora de escopo de propósito: Defender, firewall, UAC, BCDEdit, “limpa registro”.
 
-Os serviços Xbox são avançados e desativados apenas sob escolha explícita. Isso pode interromper
-login, multiplayer, convites ou sincronização de saves do Xbox/Game Pass. O ganho de desempenho
-depende do PC e não é garantido; cada alteração salva o estado anterior para reversão.
-
-A aba **Xbox** reúne os ajustes do Game Mode, Game DVR e serviços Xbox. A leitura de CPU, GPUs,
-memória e discos é feita no Windows via CIM; o app soma processadores físicos, mostra adaptadores
-gráficos detectados e usa a memória física instalada como fonte principal.
+A leitura de CPU, GPUs, memória e discos é feita no Windows via CIM; o app soma processadores
+físicos, mostra adaptadores gráficos detectados e usa a memória física instalada como fonte principal.
 
 ## Rodar
 

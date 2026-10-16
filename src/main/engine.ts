@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { TWEAKS } from '../shared/catalog'
 import { RestorePointService, RestorePointStore } from '../shared/restore'
-import type { ActionResult, ApplyReport, RestorePoint, SystemInfo, TweakStatus } from '../shared/types'
+import type { ActionResult, ApplyReport, NetworkCommand, RestorePoint, SystemInfo, TweakStatus } from '../shared/types'
 import { runPs, runPsSafe } from './powershell'
 
 interface Snapshot {
@@ -13,10 +13,12 @@ interface Snapshot {
 const ULTIMATE_SCHEME = 'e9a42b02-d5df-448d-aa00-03f14749eb61'
 const OPTIONAL_SERVICES: Record<string, string> = {
   sysmain: 'SysMain',
+  telemetry: 'DiagTrack'
+}
+const LEGACY_XBOX_SERVICES: Record<'xbox-auth' | 'xbox-game-save' | 'xbox-network', string> = {
   'xbox-auth': 'XblAuthManager',
   'xbox-game-save': 'XblGameSave',
-  'xbox-network': 'XboxNetApiSvc',
-  telemetry: 'DiagTrack'
+  'xbox-network': 'XboxNetApiSvc'
 }
 
 interface ServiceState {
@@ -73,6 +75,31 @@ export async function isAdmin(): Promise<boolean> {
     '([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)'
   )
   return out.toLowerCase() === 'true'
+}
+
+export async function runNetworkCommand(command: NetworkCommand): Promise<string> {
+  const commands: Record<NetworkCommand, string> = {
+    'renew-ip': 'ipconfig.exe /renew',
+    'flush-dns': 'ipconfig.exe /flushdns',
+    'reset-winsock': 'netsh.exe winsock reset'
+  }
+  if (!Object.prototype.hasOwnProperty.call(commands, command)) {
+    throw new Error('Comando de rede desconhecido.')
+  }
+  if (process.platform !== 'win32') {
+    throw new Error('Os comandos de rede estão disponíveis somente no Windows.')
+  }
+  if (!(await isAdmin())) {
+    throw new Error('Abra o MestrePicoteBoost como Administrador para executar comandos de rede.')
+  }
+
+  const output = await runPs(commands[command])
+  if (command === 'reset-winsock') {
+    return [output.stdout, 'Reinicie o computador para concluir a redefinição do Winsock.']
+      .filter(Boolean)
+      .join('\n')
+  }
+  return output.stdout || 'Comando concluído sem saída.'
 }
 
 export async function getSystemInfo(): Promise<SystemInfo> {
@@ -198,38 +225,23 @@ export async function getStatuses(): Promise<TweakStatus[]> {
     /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/
   )?.[0] ?? ''
   const [
-    gameMode,
     hags,
-    dvr,
     gpuPri,
     visual,
     trans,
     anim,
     bg,
-    throttle,
     mouse
   ] = await Promise.all([
-    regGet('HKCU', 'Software\\Microsoft\\GameBar', 'AutoGameModeEnabled'),
     regGet('HKLM', 'SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers', 'HwSchMode'),
-    regGet('HKCU', 'System\\GameConfigStore', 'GameDVR_Enabled'),
     regGet('HKLM', 'SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Games', 'GPU Priority'),
     regGet('HKCU', 'Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\VisualEffects', 'VisualFXSetting'),
     regGet('HKCU', 'Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize', 'EnableTransparency'),
     regGet('HKCU', 'Control Panel\\Desktop\\WindowMetrics', 'MinAnimate'),
     regGet('HKCU', 'Software\\Microsoft\\Windows\\CurrentVersion\\BackgroundAccessApplications', 'GlobalUserDisabled'),
-    regGet('HKLM', 'SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile', 'NetworkThrottlingIndex'),
     regGet('HKCU', 'Control Panel\\Mouse', 'MouseSpeed')
   ])
 
-  const nagleSample = await runPsSafe(`
-$ifaces = Get-ChildItem 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces'
-$hit = $false
-foreach ($i in $ifaces) {
-  $p = Get-ItemProperty $i.PSPath -ErrorAction SilentlyContinue
-  if ($p.TcpNoDelay -eq 1) { $hit = $true; break }
-}
-if ($hit) { '1' } else { '0' }
-`)
   const serviceStatuses = await Promise.all(
     Object.entries(OPTIONAL_SERVICES).map(async ([id, name]) => [id, await runPsSafe(`(Get-Service -Name '${name}' -ErrorAction SilentlyContinue).Status`)] as const)
   )
@@ -241,16 +253,12 @@ if ($hit) { '1' } else { '0' }
     },
     'usb-suspend': { applied: false, current: 'plano ativo' },
     'pcie-link': { applied: false, current: 'plano ativo' },
-    'game-mode': { applied: gameMode === '1', current: gameMode },
     hags: { applied: hags === '2', current: hags },
-    'game-dvr': { applied: dvr === '0', current: dvr },
     'mmcss-games': { applied: gpuPri === '8', current: gpuPri },
     'visual-fx': { applied: visual === '2', current: visual },
     transparency: { applied: trans === '0', current: trans },
     animations: { applied: anim === '0', current: anim },
     'background-apps': { applied: bg === '1', current: bg },
-    'network-throttle': { applied: throttle === '4294967295' || throttle.toLowerCase() === 'ffffffff', current: throttle },
-    nagle: { applied: nagleSample === '1', current: nagleSample },
     'mouse-accel': { applied: mouse === '0', current: mouse }
   }
   for (const [id, serviceStatus] of serviceStatuses) {
@@ -291,30 +299,12 @@ powercfg /SETDCVALUEINDEX ${guid} 501a4d13-42af-4429-9fd1-a6cf2bdffac9 ee12f906-
 powercfg /setactive ${guid}`)
       return 'PCI Express em desempenho máximo'
     }
-    case 'game-mode': {
-      await remember(id, {
-        auto: await regGet('HKCU', 'Software\\Microsoft\\GameBar', 'AutoGameModeEnabled'),
-        allow: await regGet('HKCU', 'Software\\Microsoft\\GameBar', 'AllowAutoGameMode')
-      })
-      await regSet('HKCU', 'Software\\Microsoft\\GameBar', 'AutoGameModeEnabled', 'DWord', '1')
-      await regSet('HKCU', 'Software\\Microsoft\\GameBar', 'AllowAutoGameMode', 'DWord', '1')
-      return 'Game Mode ligado'
-    }
     case 'hags': {
       await remember(id, {
         value: await regGet('HKLM', 'SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers', 'HwSchMode')
       })
       await regSet('HKLM', 'SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers', 'HwSchMode', 'DWord', '2')
       return 'HAGS ligado (reinicie para valer 100%)'
-    }
-    case 'game-dvr': {
-      await remember(id, {
-        dvr: await regGet('HKCU', 'System\\GameConfigStore', 'GameDVR_Enabled'),
-        cap: await regGet('HKCU', 'SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\GameDVR', 'AppCaptureEnabled')
-      })
-      await regSet('HKCU', 'System\\GameConfigStore', 'GameDVR_Enabled', 'DWord', '0')
-      await regSet('HKCU', 'SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\GameDVR', 'AppCaptureEnabled', 'DWord', '0')
-      return 'Game DVR desligado'
     }
     case 'mmcss-games': {
       const path = 'SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Games'
@@ -373,29 +363,6 @@ New-ItemProperty -Path $path -Name 'MinAnimate' -PropertyType String -Value '0' 
       )
       return 'Apps em segundo plano limitados'
     }
-    case 'network-throttle': {
-      const path = 'SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile'
-      await remember(id, {
-        throttle: await regGet('HKLM', path, 'NetworkThrottlingIndex'),
-        resp: await regGet('HKLM', path, 'SystemResponsiveness')
-      })
-      await regSet('HKLM', path, 'NetworkThrottlingIndex', 'DWord', '4294967295')
-      await regSet('HKLM', path, 'SystemResponsiveness', 'DWord', '0')
-      return 'Throttle de rede removido'
-    }
-    case 'nagle': {
-      await remember(id, { applied: '1' })
-      await runPs(`
-Get-ChildItem 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces' | ForEach-Object {
-  $p = Get-ItemProperty $_.PSPath
-  if ($null -ne $p.DhcpIPAddress -or $null -ne $p.IPAddress) {
-    New-ItemProperty -Path $_.PSPath -Name 'TcpNoDelay' -PropertyType DWord -Value 1 -Force | Out-Null
-    New-ItemProperty -Path $_.PSPath -Name 'TcpAckFrequency' -PropertyType DWord -Value 1 -Force | Out-Null
-  }
-}
-`)
-      return 'Nagle desligado nas interfaces ativas'
-    }
     case 'mouse-accel': {
       await remember(id, {
         speed: await regGet('HKCU', 'Control Panel\\Mouse', 'MouseSpeed'),
@@ -411,9 +378,6 @@ New-ItemProperty -Path $path -Name 'MouseThreshold2' -PropertyType String -Value
       return 'Precisão do ponteiro desligada'
     }
     case 'sysmain':
-    case 'xbox-auth':
-    case 'xbox-game-save':
-    case 'xbox-network':
     case 'telemetry': {
       const serviceName = OPTIONAL_SERVICES[id]
       const previous = await getServiceState(serviceName)
@@ -511,12 +475,19 @@ New-ItemProperty -Path $path -Name 'MouseThreshold2' -PropertyType String -Value
 `)
       break
     case 'sysmain':
-    case 'xbox-auth':
-    case 'xbox-game-save':
-    case 'xbox-network':
     case 'telemetry':
       if (prev?.startMode && prev.status) {
         await restoreWindowsService(OPTIONAL_SERVICES[id], {
+          startMode: prev.startMode,
+          status: prev.status
+        })
+      }
+      break
+    case 'xbox-auth':
+    case 'xbox-game-save':
+    case 'xbox-network':
+      if (prev?.startMode && prev.status) {
+        await restoreWindowsService(LEGACY_XBOX_SERVICES[id], {
           startMode: prev.startMode,
           status: prev.status
         })

@@ -40,9 +40,6 @@ beforeEach(async () => {
   state.registryValues = {}
   state.serviceStates = {
     SysMain: { status: 'Running', startMode: 'Auto' },
-    XblAuthManager: { status: 'Running', startMode: 'Manual' },
-    XblGameSave: { status: 'Running', startMode: 'Auto' },
-    XboxNetApiSvc: { status: 'Running', startMode: 'Manual' },
     DiagTrack: { status: 'Running', startMode: 'Auto' }
   }
   runPs.mockReset().mockImplementation(async (command: string) => ({
@@ -53,7 +50,6 @@ beforeEach(async () => {
     if (command.includes('IsInRole')) return state.isAdmin
     if (command.includes('powercfg /getactivescheme')) return state.powerScheme
     if (command.includes('ConvertTo-Json')) return state.hardwareJson
-    if (command.includes('$ifaces')) return state.registryValues.Nagle ?? '0'
     const serviceName = command.match(/Name(?:\s*=\s*|\s+)['"]([^'"]+)['"]/i)?.[1]
     if (command.includes('Get-CimInstance Win32_Service')) {
       const service = serviceName ? state.serviceStates[serviceName] : undefined
@@ -106,25 +102,57 @@ describe('system and admin information', () => {
   })
 })
 
+describe('manual network commands', () => {
+  it('runs only the selected built-in commands and reports the Winsock restart requirement', async () => {
+    if (process.platform !== 'win32') {
+      await expect(engine.runNetworkCommand('flush-dns')).rejects.toThrow(
+        'Os comandos de rede estão disponíveis somente no Windows.'
+      )
+      return
+    }
+
+    await expect(engine.runNetworkCommand('renew-ip')).resolves.toBe('Comando concluído sem saída.')
+    await expect(engine.runNetworkCommand('flush-dns')).resolves.toBe('Comando concluído sem saída.')
+    await expect(engine.runNetworkCommand('reset-winsock')).resolves.toContain(
+      'Reinicie o computador para concluir'
+    )
+
+    expect(runPs).toHaveBeenCalledWith('ipconfig.exe /renew')
+    expect(runPs).toHaveBeenCalledWith('ipconfig.exe /flushdns')
+    expect(runPs).toHaveBeenCalledWith('netsh.exe winsock reset')
+  })
+
+  it('requires administrator privileges and rejects unknown commands', async () => {
+    if (process.platform === 'win32') {
+      state.isAdmin = 'false'
+      await expect(engine.runNetworkCommand('renew-ip')).rejects.toThrow(
+        'Abra o MestrePicoteBoost como Administrador'
+      )
+      expect(runPs).not.toHaveBeenCalled()
+    } else {
+      await expect(engine.runNetworkCommand('renew-ip')).rejects.toThrow(
+        'Os comandos de rede estão disponíveis somente no Windows.'
+      )
+    }
+
+    await expect(engine.runNetworkCommand('custom-command' as 'renew-ip')).rejects.toThrow(
+      'Comando de rede desconhecido.'
+    )
+  })
+})
+
 describe('tweak status, apply, and revert operations', () => {
   it('maps all tweak registry and service values to statuses', async () => {
     state.registryValues = {
-      'AutoGameModeEnabled': '1',
       HwSchMode: '2',
-      GameDVR_Enabled: '0',
       'GPU Priority': '8',
       VisualFXSetting: '2',
       EnableTransparency: '0',
       MinAnimate: '0',
       GlobalUserDisabled: '1',
-      NetworkThrottlingIndex: 'ffffffff',
-      MouseSpeed: '0',
-      Nagle: '1'
+      MouseSpeed: '0'
     }
     state.serviceStates.SysMain.status = 'Stopped'
-    state.serviceStates.XblAuthManager.status = 'Stopped'
-    state.serviceStates.XblGameSave.status = 'Stopped'
-    state.serviceStates.XboxNetApiSvc.status = 'Stopped'
     state.serviceStates.DiagTrack.status = 'Stopped'
     state.powerScheme = '(SCHEME_CURRENT) e9a42b02-d5df-448d-aa00-03f14749eb61 (Ultimate Performance)'
 
@@ -133,16 +161,15 @@ describe('tweak status, apply, and revert operations', () => {
     expect(statuses).toHaveLength(TWEAKS.length)
     expect(statuses.filter((status) => status.applied).map((status) => status.id)).toEqual(
       expect.arrayContaining([
-        'ultimate-power', 'game-mode', 'hags', 'game-dvr', 'mmcss-games', 'visual-fx',
-        'transparency', 'animations', 'background-apps', 'network-throttle', 'nagle',
-        'mouse-accel', 'sysmain'
+        'ultimate-power', 'hags', 'mmcss-games', 'visual-fx', 'transparency', 'animations',
+        'background-apps', 'mouse-accel', 'sysmain'
       ])
     )
     expect(statuses.find((status) => status.id === 'usb-suspend')).toMatchObject({
       applied: false,
       current: 'plano ativo'
     })
-    expect(statuses.filter((status) => status.id.startsWith('xbox-')).every((status) => status.applied)).toBe(true)
+    expect(statuses).toHaveLength(TWEAKS.length)
   })
 
   it('applies and reverts every catalog tweak, recording success for each action', async () => {
@@ -158,8 +185,6 @@ describe('tweak status, apply, and revert operations', () => {
     expect(reverted.results).toHaveLength(ids.length)
     expect(reverted.results.every((result) => result.ok)).toBe(true)
     expect(reverted.log.every((line) => line.startsWith('REV'))).toBe(true)
-    expect(runPs).toHaveBeenCalledWith(expect.stringContaining("sc.exe config 'XblAuthManager' start= demand"))
-    expect(runPs).toHaveBeenCalledWith(expect.stringContaining("Start-Service -Name 'XblAuthManager'"))
     expect(runPs).toHaveBeenCalledWith(expect.stringContaining("Set-Service -Name 'DiagTrack' -StartupType Disabled"))
     expect(runPs).toHaveBeenCalledWith(expect.stringContaining("sc.exe config 'DiagTrack' start= auto"))
   })
@@ -201,22 +226,20 @@ describe('tweak status, apply, and revert operations', () => {
 describe('restore point integration', () => {
   it('creates a point from currently active tweaks, lists it, and restores it', async () => {
     state.registryValues = {
-      'AutoGameModeEnabled': '1',
-      GameDVR_Enabled: '0',
-      SysMain: 'Running',
-      Nagle: '0'
+      VisualFXSetting: '2',
+      MouseSpeed: '0'
     }
 
     const point = await engine.createRestorePoint('Before integration test')
 
     expect(point.description).toBe('Before integration test')
-    expect(point.appliedIds).toContain('game-mode')
-    expect(point.appliedIds).toContain('game-dvr')
+    expect(point.appliedIds).toContain('visual-fx')
+    expect(point.appliedIds).toContain('mouse-accel')
     expect(await engine.listRestorePoints()).toEqual([point])
     await expect(engine.restoreFromPoint(point.id)).resolves.toMatchObject({
       results: expect.arrayContaining([
-        expect.objectContaining({ id: 'game-mode', ok: true }),
-        expect.objectContaining({ id: 'game-dvr', ok: true })
+        expect.objectContaining({ id: 'visual-fx', ok: true }),
+        expect.objectContaining({ id: 'mouse-accel', ok: true })
       ])
     })
   })

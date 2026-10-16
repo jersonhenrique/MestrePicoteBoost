@@ -25,7 +25,8 @@ describe('preload API', () => {
       revert: expect.any(Function),
       createRestorePoint: expect.any(Function),
       listRestorePoints: expect.any(Function),
-      restoreFromPoint: expect.any(Function)
+      restoreFromPoint: expect.any(Function),
+      runNetworkCommand: expect.any(Function)
     }))
   })
 
@@ -38,11 +39,12 @@ describe('preload API', () => {
       ['getSystem', [], 'system:info', []],
       ['isAdmin', [], 'system:admin', []],
       ['getStatus', [], 'opt:status', []],
-      ['apply', [['game-mode']], 'opt:apply', [['game-mode']]],
+      ['apply', [['visual-fx']], 'opt:apply', [['visual-fx']]],
       ['revert', [['hags']], 'opt:revert', [['hags']]],
       ['createRestorePoint', ['before test'], 'restore:create', ['before test']],
       ['listRestorePoints', [], 'restore:list', []],
-      ['restoreFromPoint', ['point-1'], 'restore:apply', ['point-1']]
+      ['restoreFromPoint', ['point-1'], 'restore:apply', ['point-1']],
+      ['runNetworkCommand', ['reset-winsock'], 'network:run', ['reset-winsock']]
     ]
 
     for (const [method, args, channel, ipcArgs] of methods) {

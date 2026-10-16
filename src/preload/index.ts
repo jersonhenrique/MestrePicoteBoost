@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { ApplyReport, RestorePoint, SystemInfo, TweakStatus } from '../shared/types'
+import type { ApplyReport, NetworkCommand, RestorePoint, SystemInfo, TweakStatus } from '../shared/types'
 
 const api = {
   getSystem: (): Promise<SystemInfo> => ipcRenderer.invoke('system:info'),
@@ -9,7 +9,8 @@ const api = {
   revert: (ids?: string[]): Promise<ApplyReport> => ipcRenderer.invoke('opt:revert', ids),
   createRestorePoint: (description?: string): Promise<RestorePoint> => ipcRenderer.invoke('restore:create', description),
   listRestorePoints: (): Promise<RestorePoint[]> => ipcRenderer.invoke('restore:list'),
-  restoreFromPoint: (id: string): Promise<ApplyReport> => ipcRenderer.invoke('restore:apply', id)
+  restoreFromPoint: (id: string): Promise<ApplyReport> => ipcRenderer.invoke('restore:apply', id),
+  runNetworkCommand: (command: NetworkCommand): Promise<string> => ipcRenderer.invoke('network:run', command)
 }
 
 contextBridge.exposeInMainWorld('picote', api)

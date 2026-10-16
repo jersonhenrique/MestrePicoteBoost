@@ -1,8 +1,38 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CATEGORIES, PROFILES, TWEAKS, type Category } from '../../shared/catalog'
-import type { ApplyReport, RestorePoint, SystemInfo, TweakStatus } from '../../shared/types'
+import type { ApplyReport, NetworkCommand, RestorePoint, SystemInfo, TweakStatus } from '../../shared/types'
 
-type Page = 'ponto-restauracao' | 'painel' | 'otimizacoes' | 'xbox' | 'restaurar' | 'sobre'
+type Page = 'ponto-restauracao' | 'painel' | 'otimizacoes' | 'rede' | 'restaurar' | 'sobre'
+
+const NETWORK_ACTIONS: {
+  id: NetworkCommand
+  title: string
+  command: string
+  description: string
+  buttonLabel: string
+}[] = [
+  {
+    id: 'renew-ip',
+    title: 'Renovar endereço IP',
+    command: 'ipconfig /renew',
+    description: 'Solicita ao servidor DHCP a renovação do endereço IP. A conexão pode oscilar durante a renovação.',
+    buttonLabel: 'Renovar IP'
+  },
+  {
+    id: 'flush-dns',
+    title: 'Limpar cache DNS',
+    command: 'ipconfig /flushdns',
+    description: 'Limpa o cache local de resolução DNS do Windows.',
+    buttonLabel: 'Limpar cache DNS'
+  },
+  {
+    id: 'reset-winsock',
+    title: 'Redefinir Winsock',
+    command: 'netsh winsock reset',
+    description: 'Redefine o catálogo Winsock, o que pode ajudar a corrigir problemas de conectividade Wi-Fi ou Ethernet. É necessário reiniciar o computador.',
+    buttonLabel: 'Redefinir Winsock'
+  }
+]
 
 function mockSystem(): SystemInfo {
   return {
@@ -68,8 +98,7 @@ export default function App() {
   const visible = useMemo(
     () =>
       TWEAKS.filter(
-        (tweak) =>
-          tweak.category !== 'xbox' && (filter === 'todas' || tweak.category === filter)
+        (tweak) => filter === 'todas' || tweak.category === filter
       ),
     [filter]
   )
@@ -106,6 +135,25 @@ export default function App() {
       const report = await window.picote.revert(ids)
       setLog(report.log.join('\n'))
       await refresh()
+    } catch (err) {
+      setLog(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function runNetworkAction(command: NetworkCommand) {
+    if (
+      command === 'reset-winsock' &&
+      !window.confirm('A redefinição do Winsock pode interromper conexões e exige reiniciar o computador. Deseja continuar?')
+    ) {
+      return
+    }
+
+    setBusy(true)
+    setLog(`Executando ${NETWORK_ACTIONS.find((action) => action.id === command)?.command ?? command}…`)
+    try {
+      setLog(await window.picote.runNetworkCommand(command))
     } catch (err) {
       setLog(err instanceof Error ? err.message : String(err))
     } finally {
@@ -167,8 +215,8 @@ export default function App() {
           >
             Otimizações
           </button>
-          <button className={page === 'xbox' ? 'active' : ''} onClick={() => setPage('xbox')}>
-            Xbox
+          <button className={page === 'rede' ? 'active' : ''} onClick={() => setPage('rede')}>
+            Rede
           </button>
           <button className={page === 'restaurar' ? 'active' : ''} onClick={() => setPage('restaurar')}>
             Restaurar
@@ -192,7 +240,7 @@ export default function App() {
               <div>
                 <h2>Ponto de restauração</h2>
                 <p>
-                  Grave um ponto do estado atual do sistema antes de mexer em energia, rede ou
+                  Grave um ponto do estado atual do sistema antes de mexer em energia ou
                   serviços. A partir dele você pode restaurar rapidamente o que foi alterado.
                 </p>
               </div>
@@ -255,8 +303,8 @@ export default function App() {
             </div>
             {!system.isAdmin && (
               <div className="banner">
-                Abra o app como Administrador para aplicar energia, HAGS, rede e serviços. Tweaks
-                de usuário (Game Mode, mouse, visuais) ainda funcionam.
+                Abra o app como Administrador para aplicar energia, HAGS e serviços. Tweaks
+                de usuário (mouse e visuais) ainda funcionam.
               </div>
             )}
             <section className="cards">
@@ -330,7 +378,7 @@ export default function App() {
                 >
                   Todas
                 </button>
-                {CATEGORIES.filter((c) => c.id !== 'xbox').map((c) => (
+                {CATEGORIES.map((c) => (
                   <button
                     key={c.id}
                     className={filter === c.id ? 'chip on' : 'chip'}
@@ -374,77 +422,39 @@ export default function App() {
           </>
         )}
 
-        {page === 'xbox' && (
+        {page === 'rede' && (
           <>
             <div className="hero">
               <div>
-                <h2>Xbox</h2>
-                <p>
-                  Ajustes do Game Mode, captura e serviços Xbox em um só lugar. Os serviços são
-                  opcionais e podem afetar login, Game Pass, multiplayer ou sincronização de saves.
-                </p>
-              </div>
-              <div className="row">
-                <button
-                  className="btn ghost"
-                  onClick={() =>
-                    setSelected((current) => [
-                      ...new Set([...current, ...TWEAKS.filter((tweak) => tweak.category === 'xbox').map((tweak) => tweak.id)])
-                    ])
-                  }
-                >
-                  Marcar itens Xbox
-                </button>
-                <button
-                  className="btn primary"
-                  disabled={busy || !TWEAKS.some((tweak) => tweak.category === 'xbox' && selected.includes(tweak.id))}
-                  onClick={() =>
-                    void runApply(
-                      TWEAKS.filter((tweak) => tweak.category === 'xbox' && selected.includes(tweak.id)).map(
-                        (tweak) => tweak.id
-                      )
-                    )
-                  }
-                >
-                  {busy ? 'Aplicando…' : 'Aplicar selecionados'}
-                </button>
+                <h2>Rede</h2>
+                <p>Execute ações de diagnóstico e correção de rede somente quando necessário.</p>
               </div>
             </div>
-            <div className="banner">
-              Desative serviços Xbox somente se não usa esses recursos. O Windows pode não oferecer
-              ganho perceptível de FPS; cada serviço salva seu estado anterior para reversão.
-            </div>
+            {!system.isAdmin && (
+              <div className="banner">
+                Abra o MestrePicoteBoost como Administrador para executar estes comandos.
+              </div>
+            )}
             <div className="list">
-              {TWEAKS.filter((tweak) => tweak.category === 'xbox').map((tweak) => {
-                const tweakStatus = status.find((item) => item.id === tweak.id)
-                return (
-                  <label key={tweak.id} className="tweak">
-                    <input
-                      type="checkbox"
-                      checked={selected.includes(tweak.id)}
-                      onChange={() => toggle(tweak.id)}
-                    />
-                    <div>
-                      <h4>{tweak.title}</h4>
-                      <p>{tweak.blurb}</p>
-                      <div className="meta">
-                        <span className={`pill ${tweak.risk}`}>{tweak.risk}</span>
-                        {tweak.requiresAdmin && <span className="pill">admin</span>}
-                      </div>
-                      <p>{tweak.detail}</p>
-                    </div>
-                    <div className={tweakStatus?.applied ? 'status on' : 'status'}>
-                      {tweakStatus?.applied ? 'ATIVA' : 'padrão'}
-                      <br />
-                      {tweakStatus?.current && tweakStatus.current !== 'MISSING'
-                        ? tweakStatus.current
-                        : '—'}
-                    </div>
-                  </label>
-                )
-              })}
+              {NETWORK_ACTIONS.map((action) => (
+                <article className="tweak" key={action.id}>
+                  <div aria-hidden="true" />
+                  <div>
+                    <h4>{action.title}</h4>
+                    <p>{action.description}</p>
+                    <code>{action.command}</code>
+                  </div>
+                  <button
+                    className={action.id === 'reset-winsock' ? 'btn warn' : 'btn primary'}
+                    disabled={busy || !system.isAdmin}
+                    onClick={() => void runNetworkAction(action.id)}
+                  >
+                    {busy ? 'Executando…' : action.buttonLabel}
+                  </button>
+                </article>
+              ))}
             </div>
-            <div className="log">{log}</div>
+            <div className="log" role="status" aria-live="polite">{log}</div>
           </>
         )}
 
@@ -502,9 +512,8 @@ export default function App() {
             </p>
             <h3>O que este app faz de propósito</h3>
             <p>
-              Power plan, Game Mode, HAGS, overlay Xbox, visuais, mouse raw, QoS multimídia,
-              SysMain em SSD e o serviço opcional de telemetria. Ajustes Xbox ficam na aba Xbox.
-              Tudo opt-in, com risco marcado.
+              Power plan, HAGS, visuais, mouse raw, SysMain em SSD e o serviço opcional de
+              telemetria. Tudo opt-in, com risco marcado.
             </p>
             <h3>O que ele recusa</h3>
             <p>

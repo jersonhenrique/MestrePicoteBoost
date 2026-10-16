@@ -1,6 +1,6 @@
 {
   "name": "mestre-picote-boost",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Otimizações para PC gamer — aplicar, medir e reverter com segurança",
   "author": "MestrePicoteBoost",
   "main": "./out/main/index.js",
