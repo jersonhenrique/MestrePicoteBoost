@@ -27,7 +27,7 @@ renderer (React)  →  preload (contextBridge)  →  main (Electron)
 
 ## Ações de rede
 
-A aba **Rede** disponibiliza ações manuais, executadas somente após clicar no botão:
+A aba **Rede** disponibiliza ações manuais, executadas somente após confirmação:
 
 - `ipconfig /renew`: solicita a renovação do endereço IP via DHCP.
 - `ipconfig /flushdns`: limpa o cache local de DNS.
@@ -36,6 +36,10 @@ A aba **Rede** disponibiliza ações manuais, executadas somente após clicar no
 
 Execute o app como Administrador. A renovação do IP ou a redefinição do Winsock pode interromper
 temporariamente a conexão.
+
+O perfil **Tudo no talo** seleciona todas as otimizações do catálogo e as três ações de rede.
+As otimizações são aplicadas pelo botão principal; cada ação de rede precisa ser iniciada e
+confirmada individualmente.
 
 Fora de escopo de propósito: Defender, firewall, UAC, BCDEdit, “limpa registro”.
 
@@ -83,8 +87,8 @@ e publica o instalador `.exe` e o relatório Allure na página Releases do GitHu
 
 ## Uso
 
-1. Abra como administrador se quiser os tweaks de máquina.
-2. No **Painel**, veja score e hardware.
-3. Escolha um **perfil** ou monte o próprio na aba Otimizações.
-4. **Aplicar**. Reinicie se o item pedir (HAGS).
-5. **Restaurar** desfaz pelo snapshot.
+1. Abra como administrador para usar todas as otimizações e os comandos de rede.
+2. No **Painel**, veja score, hardware e perfis.
+3. Escolha um **perfil** ou monte o próprio em Otimizações; **Tudo no talo** seleciona o catálogo inteiro e todas as opções de rede.
+4. **Aplicar** executa apenas os ajustes do catálogo. Comandos de rede são confirmados e iniciados separadamente.
+5. Crie um ponto de restauração e use **Restaurar este ponto** para desfazer as alterações salvas nele.

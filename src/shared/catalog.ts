@@ -1,3 +1,5 @@
+import { NETWORK_COMMANDS, type NetworkCommand } from './types'
+
 export type Risk = 'seguro' | 'moderado' | 'avancado'
 export type Category = 'energia' | 'grafico' | 'sistema' | 'entrada' | 'servicos'
 
@@ -141,6 +143,7 @@ export const PROFILES: {
   tag: string
   description: string
   tweakIds: string[]
+  networkCommandIds?: NetworkCommand[]
 }[] = [
   {
     id: 'ranked',
@@ -186,7 +189,8 @@ export const PROFILES: {
     id: 'max',
     title: 'Tudo no talo',
     tag: 'Avançado',
-    description: 'Aplica o catálogo completo. Revise os itens avançados antes.',
-    tweakIds: TWEAKS.map((t) => t.id)
+    description: 'Seleciona todas as otimizações e ações de rede. Cada comando de rede exige confirmação individual.',
+    tweakIds: TWEAKS.map((t) => t.id),
+    networkCommandIds: [...NETWORK_COMMANDS]
   }
 ]

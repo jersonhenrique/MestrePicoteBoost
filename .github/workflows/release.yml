@@ -65,7 +65,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: MestrePicoteBoost ${{ github.ref_name }}
-          generate_release_notes: true
+          body_path: RELEASE_NOTES.md
+          generate_release_notes: false
           files: |
             release/*.exe
             release/allure-report.zip

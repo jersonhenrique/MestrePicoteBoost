@@ -34,7 +34,8 @@ export interface ApplyReport {
   log: string[]
 }
 
-export type NetworkCommand = 'renew-ip' | 'flush-dns' | 'reset-winsock'
+export const NETWORK_COMMANDS = ['renew-ip', 'flush-dns', 'reset-winsock'] as const
+export type NetworkCommand = (typeof NETWORK_COMMANDS)[number]
 
 export interface RestorePoint {
   id: string

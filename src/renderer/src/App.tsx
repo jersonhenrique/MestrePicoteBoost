@@ -1,8 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CATEGORIES, PROFILES, TWEAKS, type Category } from '../../shared/catalog'
-import type { ApplyReport, NetworkCommand, RestorePoint, SystemInfo, TweakStatus } from '../../shared/types'
+import {
+  type ApplyReport,
+  type NetworkCommand,
+  type RestorePoint,
+  type SystemInfo,
+  type TweakStatus
+} from '../../shared/types'
 
-type Page = 'ponto-restauracao' | 'painel' | 'otimizacoes' | 'rede' | 'restaurar' | 'sobre'
+type Page = 'ponto-restauracao' | 'painel' | 'otimizacoes' | 'rede' | 'sobre'
 
 const NETWORK_ACTIONS: {
   id: NetworkCommand
@@ -54,6 +60,9 @@ export default function App() {
   const [system, setSystem] = useState<SystemInfo>(mockSystem)
   const [status, setStatus] = useState<TweakStatus[]>([])
   const [selected, setSelected] = useState<string[]>(PROFILES[0].tweakIds)
+  const [selectedNetworkCommands, setSelectedNetworkCommands] = useState<NetworkCommand[]>(
+    PROFILES[0].networkCommandIds ?? []
+  )
   const [profile, setProfile] = useState('ranked')
   const [filter, setFilter] = useState<Category | 'todas'>('todas')
   const [restoreLabel, setRestoreLabel] = useState('')
@@ -108,11 +117,19 @@ export default function App() {
     setSelected((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]))
   }
 
+  function toggleNetworkCommand(id: NetworkCommand) {
+    setProfile('custom')
+    setSelectedNetworkCommands((current) =>
+      current.includes(id) ? current.filter((command) => command !== id) : [...current, id]
+    )
+  }
+
   function pickProfile(id: string) {
     const p = PROFILES.find((x) => x.id === id)
     if (!p) return
     setProfile(id)
     setSelected(p.tweakIds)
+    setSelectedNetworkCommands(p.networkCommandIds ?? [])
     setPage('otimizacoes')
   }
 
@@ -129,24 +146,13 @@ export default function App() {
     }
   }
 
-  async function runRevert(ids?: string[]) {
-    setBusy(true)
-    try {
-      const report = await window.picote.revert(ids)
-      setLog(report.log.join('\n'))
-      await refresh()
-    } catch (err) {
-      setLog(err instanceof Error ? err.message : String(err))
-    } finally {
-      setBusy(false)
-    }
-  }
-
   async function runNetworkAction(command: NetworkCommand) {
-    if (
-      command === 'reset-winsock' &&
-      !window.confirm('A redefinição do Winsock pode interromper conexões e exige reiniciar o computador. Deseja continuar?')
-    ) {
+    const confirmationMessages: Record<NetworkCommand, string> = {
+      'renew-ip': 'Renovar o endereço IP pode interromper temporariamente a conexão. Deseja continuar?',
+      'flush-dns': 'Limpar o cache DNS remove as resoluções locais armazenadas. Deseja continuar?',
+      'reset-winsock': 'A redefinição do Winsock pode interromper conexões e exige reiniciar o computador. Deseja continuar?'
+    }
+    if (!window.confirm(confirmationMessages[command])) {
       return
     }
 
@@ -217,9 +223,6 @@ export default function App() {
           </button>
           <button className={page === 'rede' ? 'active' : ''} onClick={() => setPage('rede')}>
             Rede
-          </button>
-          <button className={page === 'restaurar' ? 'active' : ''} onClick={() => setPage('restaurar')}>
-            Restaurar
           </button>
           <button className={page === 'sobre' ? 'active' : ''} onClick={() => setPage('sobre')}>
             Sobre
@@ -292,14 +295,6 @@ export default function App() {
                   que some com antivírus.
                 </p>
               </div>
-              <div className="row">
-                <button className="btn ghost" onClick={() => void refresh()} disabled={busy}>
-                  Atualizar scan
-                </button>
-                <button className="btn primary" onClick={() => pickProfile('ranked')}>
-                  Ir para Ranked
-                </button>
-              </div>
             </div>
             {!system.isAdmin && (
               <div className="banner">
@@ -348,6 +343,12 @@ export default function App() {
                   <div className="tag">{p.tag}</div>
                   <h3>{p.title}</h3>
                   <p>{p.description}</p>
+                  <div className="meta">
+                    <span className="pill">{p.tweakIds.length} otimizações</span>
+                    {(p.networkCommandIds?.length ?? 0) > 0 && (
+                      <span className="pill">{p.networkCommandIds?.length} ações de rede</span>
+                    )}
+                  </div>
                 </button>
               ))}
             </div>
@@ -362,7 +363,13 @@ export default function App() {
                 <p>Marque, aplique, meça. Cada item guarda o valor anterior para desfazer.</p>
               </div>
               <div className="row">
-                <button className="btn ghost" onClick={() => setSelected(visible.map((t) => t.id))}>
+                <button
+                  className="btn ghost"
+                  onClick={() => {
+                    setProfile('custom')
+                    setSelected((current) => [...new Set([...current, ...visible.map((t) => t.id)])])
+                  }}
+                >
                   Marcar visíveis
                 </button>
                 <button className="btn primary" disabled={busy || selected.length === 0} onClick={() => void runApply()}>
@@ -418,6 +425,42 @@ export default function App() {
                 )
               })}
             </div>
+            <section aria-labelledby="profile-network-heading">
+              <h3 id="profile-network-heading">
+                Opções de rede no perfil ({selectedNetworkCommands.length}/{NETWORK_ACTIONS.length})
+              </h3>
+              <p style={{ color: 'var(--mute)' }}>
+                “Tudo no talo” seleciona todas. Os comandos não são executados pelo botão de aplicar
+                otimizações; cada um exige confirmação individual.
+              </p>
+              <div className="list">
+                {NETWORK_ACTIONS.map((action) => {
+                  const isSelected = selectedNetworkCommands.includes(action.id)
+                  return (
+                    <article className="tweak network-profile-option" key={action.id}>
+                      <input
+                        type="checkbox"
+                        aria-label={`Incluir ${action.title} no perfil`}
+                        checked={isSelected}
+                        onChange={() => toggleNetworkCommand(action.id)}
+                      />
+                      <div>
+                        <h4>{action.title}</h4>
+                        <p>{action.description}</p>
+                        <code>{action.command}</code>
+                      </div>
+                      <button
+                        className={action.id === 'reset-winsock' ? 'btn warn' : 'btn primary'}
+                        disabled={busy || !system.isAdmin || !isSelected}
+                        onClick={() => void runNetworkAction(action.id)}
+                      >
+                        {busy ? 'Executando…' : action.buttonLabel}
+                      </button>
+                    </article>
+                  )
+                })}
+              </div>
+            </section>
             <div className="log">{log}</div>
           </>
         )}
@@ -455,50 +498,6 @@ export default function App() {
               ))}
             </div>
             <div className="log" role="status" aria-live="polite">{log}</div>
-          </>
-        )}
-
-        {page === 'restaurar' && (
-          <>
-            <div className="hero">
-              <div>
-                <h2>Desfazer o boost</h2>
-                <p>
-                  Restaura valores salvos no snapshot local. Se nunca aplicou por aqui, volta a
-                  padrões razoáveis do Windows.
-                </p>
-              </div>
-              <button className="btn warn" disabled={busy} onClick={() => void runRevert()}>
-                {busy ? 'Revertendo…' : 'Reverter tudo'}
-              </button>
-            </div>
-            <div className="list">
-              {TWEAKS.map((t) => {
-                const st = status.find((s) => s.id === t.id)
-                return (
-                  <div key={t.id} className="tweak">
-                    <div />
-                    <div>
-                      <h4>{t.title}</h4>
-                      <p>{t.detail}</p>
-                    </div>
-                    <div>
-                      <button
-                        className="btn ghost"
-                        disabled={busy}
-                        onClick={() => void runRevert([t.id])}
-                      >
-                        Reverter
-                      </button>
-                      <div className={st?.applied ? 'status on' : 'status'}>
-                        {st?.applied ? 'ATIVA' : 'padrão'}
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-            <div className="log">{log}</div>
           </>
         )}
 

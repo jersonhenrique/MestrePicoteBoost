@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { CATEGORIES, PROFILES, TWEAKS } from './catalog'
+import { NETWORK_COMMANDS } from './types'
 
 describe('tweak catalog and profiles', () => {
   it('contains unique tweak ids and valid categories', () => {
@@ -17,6 +18,13 @@ describe('tweak catalog and profiles', () => {
       expect(profile.tweakIds.length, profile.title).toBeGreaterThan(0)
       expect(profile.tweakIds.every((id) => tweakIds.has(id)), profile.title).toBe(true)
     }
+  })
+
+  it('selects the complete optimization catalog and all network actions in the max profile', () => {
+    const maxProfile = PROFILES.find((profile) => profile.id === 'max')
+
+    expect(maxProfile?.tweakIds).toEqual(TWEAKS.map((tweak) => tweak.id))
+    expect(maxProfile?.networkCommandIds).toEqual(NETWORK_COMMANDS)
   })
 
   it('marks administrative and reboot requirements consistently as booleans', () => {
