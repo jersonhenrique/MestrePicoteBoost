@@ -1,6 +1,6 @@
-# MestrePicoteBoost 1.3.1
+# MestrePicoteBoost 1.3.2
 
 ## Melhorias
 
-- A aba **Sobre** agora inclui informações para entrar em contato com Mestre Picote sobre otimização, montagem de PCs na Zona Oeste de São Paulo e sugestões de peças.
-- Adicionados links diretos para Instagram `@mestrepicoteboost`, YouTube `@mestrepicoteboost` e Twitch `@mestrepicote`.
+- Corrigida a pipeline de CI, removendo a publicação de relatórios no GitHub Pages, que falhava porque Pages não está habilitado neste repositório.
+- O relatório Allure continua sendo gerado e disponibilizado como artefato no workflow do GitHub Actions.
