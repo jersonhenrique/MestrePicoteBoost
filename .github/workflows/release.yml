@@ -1,0 +1,71 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  windows-release:
+    runs-on: windows-latest
+    env:
+      CI: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install chromium
+
+      - name: Clean prior Allure results
+        run: npm run allure:clean
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Run end-to-end app tests
+        run: npm run test:e2e
+
+      - name: Generate Allure report
+        if: always()
+        run: npm run allure:report
+
+      - name: Build Windows installer
+        if: success()
+        run: npm run dist:win
+
+      - name: Bundle Allure report
+        if: success()
+        shell: pwsh
+        run: Compress-Archive -Path allure-report\* -DestinationPath release\allure-report.zip -Force
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-report-${{ github.ref_name }}
+          path: allure-report
+          if-no-files-found: warn
+
+      - name: Publish GitHub Release
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          name: MestrePicoteBoost ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            release/*.exe
+            release/allure-report.zip

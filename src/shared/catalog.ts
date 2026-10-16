@@ -1,5 +1,5 @@
 export type Risk = 'seguro' | 'moderado' | 'avancado'
-export type Category = 'energia' | 'grafico' | 'rede' | 'sistema' | 'entrada' | 'servicos'
+export type Category = 'energia' | 'grafico' | 'sistema' | 'entrada' | 'servicos'
 
 export interface Tweak {
   id: string
@@ -15,7 +15,6 @@ export interface Tweak {
 export const CATEGORIES: { id: Category; label: string }[] = [
   { id: 'energia', label: 'Energia' },
   { id: 'grafico', label: 'Gráfico' },
-  { id: 'rede', label: 'Rede' },
   { id: 'sistema', label: 'Sistema' },
   { id: 'entrada', label: 'Mouse / input' },
   { id: 'servicos', label: 'Serviços' }
@@ -51,15 +50,6 @@ export const TWEAKS: Tweak[] = [
     requiresAdmin: true
   },
   {
-    id: 'game-mode',
-    title: 'Game Mode do Windows',
-    blurb: 'Prioriza o jogo e reduz tarefas em segundo plano.',
-    detail: 'Liga Auto Game Mode nas chaves do Game Bar.',
-    category: 'grafico',
-    risk: 'seguro',
-    requiresAdmin: false
-  },
-  {
     id: 'hags',
     title: 'Agendamento de GPU com aceleração de hardware',
     blurb: 'Reduz latência de envio de frames (HAGS).',
@@ -68,15 +58,6 @@ export const TWEAKS: Tweak[] = [
     risk: 'moderado',
     requiresAdmin: true,
     rebootHint: true
-  },
-  {
-    id: 'game-dvr',
-    title: 'Desligar Xbox Game DVR / captura',
-    blurb: 'Overlay e gravação em background comem FPS.',
-    detail: 'Desativa AppCapture e GameDVR_Enabled no perfil do usuário.',
-    category: 'grafico',
-    risk: 'seguro',
-    requiresAdmin: false
   },
   {
     id: 'mmcss-games',
@@ -125,24 +106,6 @@ export const TWEAKS: Tweak[] = [
     requiresAdmin: false
   },
   {
-    id: 'network-throttle',
-    title: 'Remover throttle de rede multimídia',
-    blurb: 'Windows deixa de limitar pacotes em sessão “multimídia”.',
-    detail: 'NetworkThrottlingIndex = 0xFFFFFFFF e SystemResponsiveness = 0.',
-    category: 'rede',
-    risk: 'moderado',
-    requiresAdmin: true
-  },
-  {
-    id: 'nagle',
-    title: 'TcpNoDelay (desligar Nagle)',
-    blurb: 'Pacotes pequenos saem na hora — útil em competitivos.',
-    detail: 'TcpNoDelay e TcpAckFrequency = 1 nas interfaces IPv4. Pode piorar downloads.',
-    category: 'rede',
-    risk: 'avancado',
-    requiresAdmin: true
-  },
-  {
     id: 'mouse-accel',
     title: 'Desligar precisão do ponteiro',
     blurb: 'Aceleração do Windows destrói aim consistente.',
@@ -156,6 +119,16 @@ export const TWEAKS: Tweak[] = [
     title: 'SysMain (Superfetch) — SSD',
     blurb: 'Em SSD o pré-carregamento costuma só gerar I/O extra.',
     detail: 'Para o serviço SysMain. Em HDD antigo, deixe ligado.',
+    category: 'servicos',
+    risk: 'avancado',
+    requiresAdmin: true
+  },
+  {
+    id: 'telemetry',
+    title: 'Telemetria do Windows (DiagTrack)',
+    blurb: 'Desativa a coleta opcional de diagnóstico em segundo plano.',
+    detail:
+      'Para e desativa Connected User Experiences and Telemetry (DiagTrack). Não garante ganho de FPS e pode limitar diagnósticos do Windows. O estado anterior é salvo para reversão.',
     category: 'servicos',
     risk: 'avancado',
     requiresAdmin: true
@@ -178,24 +151,19 @@ export const PROFILES: {
       'ultimate-power',
       'usb-suspend',
       'pcie-link',
-      'game-mode',
-      'game-dvr',
       'visual-fx',
       'transparency',
       'animations',
-      'mouse-accel',
-      'network-throttle'
+      'mouse-accel'
     ]
   },
   {
     id: 'casual',
     title: 'Casual',
     tag: 'Equilíbrio',
-    description: 'Ganho de desempenho sem mexer em rede avançada nem serviços.',
+    description: 'Ganho de desempenho para uso diário, sem ajustes avançados.',
     tweakIds: [
       'ultimate-power',
-      'game-mode',
-      'game-dvr',
       'visual-fx',
       'transparency',
       'mouse-accel'
@@ -205,11 +173,10 @@ export const PROFILES: {
     id: 'stream',
     title: 'Stream',
     tag: 'Jogo + OBS',
-    description: 'Power plan e GPU, mas mantém captura Xbox desligada e não mata SysMain.',
+    description: 'Power plan e GPU, sem alterar serviços do sistema.',
     tweakIds: [
       'ultimate-power',
       'usb-suspend',
-      'game-mode',
       'hags',
       'mmcss-games',
       'visual-fx'

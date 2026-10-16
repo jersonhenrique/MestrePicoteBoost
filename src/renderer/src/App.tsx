@@ -1,8 +1,38 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CATEGORIES, PROFILES, TWEAKS, type Category } from '../../shared/catalog'
-import type { ApplyReport, SystemInfo, TweakStatus } from '../../shared/types'
+import type { ApplyReport, NetworkCommand, RestorePoint, SystemInfo, TweakStatus } from '../../shared/types'
 
-type Page = 'painel' | 'otimizacoes' | 'restaurar' | 'sobre'
+type Page = 'ponto-restauracao' | 'painel' | 'otimizacoes' | 'rede' | 'restaurar' | 'sobre'
+
+const NETWORK_ACTIONS: {
+  id: NetworkCommand
+  title: string
+  command: string
+  description: string
+  buttonLabel: string
+}[] = [
+  {
+    id: 'renew-ip',
+    title: 'Renovar endereço IP',
+    command: 'ipconfig /renew',
+    description: 'Solicita ao servidor DHCP a renovação do endereço IP. A conexão pode oscilar durante a renovação.',
+    buttonLabel: 'Renovar IP'
+  },
+  {
+    id: 'flush-dns',
+    title: 'Limpar cache DNS',
+    command: 'ipconfig /flushdns',
+    description: 'Limpa o cache local de resolução DNS do Windows.',
+    buttonLabel: 'Limpar cache DNS'
+  },
+  {
+    id: 'reset-winsock',
+    title: 'Redefinir Winsock',
+    command: 'netsh winsock reset',
+    description: 'Redefine o catálogo Winsock, o que pode ajudar a corrigir problemas de conectividade Wi-Fi ou Ethernet. É necessário reiniciar o computador.',
+    buttonLabel: 'Redefinir Winsock'
+  }
+]
 
 function mockSystem(): SystemInfo {
   return {
@@ -20,12 +50,14 @@ function mockSystem(): SystemInfo {
 }
 
 export default function App() {
-  const [page, setPage] = useState<Page>('painel')
+  const [page, setPage] = useState<Page>('ponto-restauracao')
   const [system, setSystem] = useState<SystemInfo>(mockSystem)
   const [status, setStatus] = useState<TweakStatus[]>([])
   const [selected, setSelected] = useState<string[]>(PROFILES[0].tweakIds)
   const [profile, setProfile] = useState('ranked')
   const [filter, setFilter] = useState<Category | 'todas'>('todas')
+  const [restoreLabel, setRestoreLabel] = useState('')
+  const [restorePoints, setRestorePoints] = useState<RestorePoint[]>([])
   const [busy, setBusy] = useState(false)
   const [log, setLog] = useState('Pronto. Escolha um perfil e aplique.')
   const [error, setError] = useState('')
@@ -45,15 +77,29 @@ export default function App() {
     }
   }
 
+  async function refreshRestorePoints() {
+    try {
+      if (!window.picote) return
+      const points = await window.picote.listRestorePoints()
+      setRestorePoints(points)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
   useEffect(() => {
     void refresh()
+    void refreshRestorePoints()
   }, [])
 
   const appliedCount = status.filter((s) => s.applied).length
   const score = Math.round((appliedCount / TWEAKS.length) * 100)
 
   const visible = useMemo(
-    () => TWEAKS.filter((t) => filter === 'todas' || t.category === filter),
+    () =>
+      TWEAKS.filter(
+        (tweak) => filter === 'todas' || tweak.category === filter
+      ),
     [filter]
   )
 
@@ -70,10 +116,10 @@ export default function App() {
     setPage('otimizacoes')
   }
 
-  async function runApply() {
+  async function runApply(ids = selected) {
     setBusy(true)
     try {
-      const report: ApplyReport = await window.picote.apply(selected)
+      const report: ApplyReport = await window.picote.apply(ids)
       setLog(report.log.join('\n'))
       await refresh()
     } catch (err) {
@@ -96,6 +142,53 @@ export default function App() {
     }
   }
 
+  async function runNetworkAction(command: NetworkCommand) {
+    if (
+      command === 'reset-winsock' &&
+      !window.confirm('A redefinição do Winsock pode interromper conexões e exige reiniciar o computador. Deseja continuar?')
+    ) {
+      return
+    }
+
+    setBusy(true)
+    setLog(`Executando ${NETWORK_ACTIONS.find((action) => action.id === command)?.command ?? command}…`)
+    try {
+      setLog(await window.picote.runNetworkCommand(command))
+    } catch (err) {
+      setLog(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function createRestorePoint() {
+    setBusy(true)
+    try {
+      const point = await window.picote.createRestorePoint(restoreLabel.trim() || undefined)
+      setLog(`Ponto de restauração criado: ${point.name}\n${point.description}`)
+      setRestoreLabel('')
+      await refreshRestorePoints()
+    } catch (err) {
+      setLog(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function restorePointById(id: string) {
+    setBusy(true)
+    try {
+      const report = await window.picote.restoreFromPoint(id)
+      setLog(report.log.join('\n'))
+      await refresh()
+      await refreshRestorePoints()
+    } catch (err) {
+      setLog(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="app">
       <aside className="side">
@@ -107,6 +200,12 @@ export default function App() {
           </div>
         </div>
         <nav className="nav">
+          <button
+            className={page === 'ponto-restauracao' ? 'active' : ''}
+            onClick={() => setPage('ponto-restauracao')}
+          >
+            Ponto de restauração
+          </button>
           <button className={page === 'painel' ? 'active' : ''} onClick={() => setPage('painel')}>
             Painel
           </button>
@@ -115,6 +214,9 @@ export default function App() {
             onClick={() => setPage('otimizacoes')}
           >
             Otimizações
+          </button>
+          <button className={page === 'rede' ? 'active' : ''} onClick={() => setPage('rede')}>
+            Rede
           </button>
           <button className={page === 'restaurar' ? 'active' : ''} onClick={() => setPage('restaurar')}>
             Restaurar
@@ -131,6 +233,55 @@ export default function App() {
       </aside>
 
       <main className="main">
+        {error && <div className="banner">{error}</div>}
+        {page === 'ponto-restauracao' && (
+          <>
+            <div className="hero">
+              <div>
+                <h2>Ponto de restauração</h2>
+                <p>
+                  Grave um ponto do estado atual do sistema antes de mexer em energia ou
+                  serviços. A partir dele você pode restaurar rapidamente o que foi alterado.
+                </p>
+              </div>
+              <button className="btn primary" disabled={busy} onClick={() => void createRestorePoint()}>
+                {busy ? 'Criando…' : 'Criar ponto'}
+              </button>
+            </div>
+            <div className="restore-form">
+              <label htmlFor="restore-label">Descrição do ponto</label>
+              <input
+                id="restore-label"
+                value={restoreLabel}
+                onChange={(event) => setRestoreLabel(event.target.value)}
+                placeholder="Ex.: antes do perfil Ranked"
+              />
+            </div>
+            <div className="list">
+              {restorePoints.length === 0 ? (
+                <div className="empty-state">Nenhum ponto de restauração criado ainda.</div>
+              ) : (
+                restorePoints.map((point) => (
+                  <div key={point.id} className="restore-card">
+                    <div>
+                      <h4>{point.name}</h4>
+                      <p>{point.description}</p>
+                      <div className="meta">
+                        <span className="pill">{point.tweakCount} ajustes</span>
+                        <span className="pill">{new Date(point.createdAt).toLocaleString('pt-BR')}</span>
+                      </div>
+                    </div>
+                    <button className="btn ghost" onClick={() => void restorePointById(point.id)}>
+                      Restaurar este ponto
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="log">{log}</div>
+          </>
+        )}
+
         {page === 'painel' && (
           <>
             <div className="hero">
@@ -152,11 +303,10 @@ export default function App() {
             </div>
             {!system.isAdmin && (
               <div className="banner">
-                Abra o app como Administrador para aplicar energia, HAGS, rede e serviços. Tweaks
-                de usuário (Game Mode, mouse, visuais) ainda funcionam.
+                Abra o app como Administrador para aplicar energia, HAGS e serviços. Tweaks
+                de usuário (mouse e visuais) ainda funcionam.
               </div>
             )}
-            {error && <div className="banner">{error}</div>}
             <section className="cards">
               <article className="card score">
                 <div className="k">Score Picote</div>
@@ -272,6 +422,42 @@ export default function App() {
           </>
         )}
 
+        {page === 'rede' && (
+          <>
+            <div className="hero">
+              <div>
+                <h2>Rede</h2>
+                <p>Execute ações de diagnóstico e correção de rede somente quando necessário.</p>
+              </div>
+            </div>
+            {!system.isAdmin && (
+              <div className="banner">
+                Abra o MestrePicoteBoost como Administrador para executar estes comandos.
+              </div>
+            )}
+            <div className="list">
+              {NETWORK_ACTIONS.map((action) => (
+                <article className="tweak" key={action.id}>
+                  <div aria-hidden="true" />
+                  <div>
+                    <h4>{action.title}</h4>
+                    <p>{action.description}</p>
+                    <code>{action.command}</code>
+                  </div>
+                  <button
+                    className={action.id === 'reset-winsock' ? 'btn warn' : 'btn primary'}
+                    disabled={busy || !system.isAdmin}
+                    onClick={() => void runNetworkAction(action.id)}
+                  >
+                    {busy ? 'Executando…' : action.buttonLabel}
+                  </button>
+                </article>
+              ))}
+            </div>
+            <div className="log" role="status" aria-live="polite">{log}</div>
+          </>
+        )}
+
         {page === 'restaurar' && (
           <>
             <div className="hero">
@@ -326,8 +512,8 @@ export default function App() {
             </p>
             <h3>O que este app faz de propósito</h3>
             <p>
-              Power plan, Game Mode, HAGS, overlay Xbox, visuais, mouse raw, QoS multimídia e
-              SysMain em SSD. Tudo opt-in, com risco marcado.
+              Power plan, HAGS, visuais, mouse raw, SysMain em SSD e o serviço opcional de
+              telemetria. Tudo opt-in, com risco marcado.
             </p>
             <h3>O que ele recusa</h3>
             <p>

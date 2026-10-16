@@ -1,8 +1,9 @@
 import { app } from 'electron'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { TWEAKS } from '../shared/catalog'
-import type { ActionResult, ApplyReport, SystemInfo, TweakStatus } from '../shared/types'
+import { RestorePointService, RestorePointStore } from '../shared/restore'
+import type { ActionResult, ApplyReport, NetworkCommand, RestorePoint, SystemInfo, TweakStatus } from '../shared/types'
 import { runPs, runPsSafe } from './powershell'
 
 interface Snapshot {
@@ -10,6 +11,20 @@ interface Snapshot {
 }
 
 const ULTIMATE_SCHEME = 'e9a42b02-d5df-448d-aa00-03f14749eb61'
+const OPTIONAL_SERVICES: Record<string, string> = {
+  sysmain: 'SysMain',
+  telemetry: 'DiagTrack'
+}
+const LEGACY_XBOX_SERVICES: Record<'xbox-auth' | 'xbox-game-save' | 'xbox-network', string> = {
+  'xbox-auth': 'XblAuthManager',
+  'xbox-game-save': 'XblGameSave',
+  'xbox-network': 'XboxNetApiSvc'
+}
+
+interface ServiceState {
+  status: string
+  startMode: string
+}
 
 function storePath(): string {
   return join(app.getPath('userData'), 'picote-snapshot.json')
@@ -29,14 +44,30 @@ async function saveSnapshot(snap: Snapshot): Promise<void> {
   await writeFile(storePath(), JSON.stringify(snap, null, 2), 'utf8')
 }
 
+const restoreStore = new RestorePointStore(join(app.getPath('userData'), 'picote-restore-points.json'))
+const restorePointService = new RestorePointService(restoreStore)
+
 async function remember(id: string, data: Record<string, string>): Promise<void> {
   const snap = await loadSnapshot()
   if (!snap[id]) snap[id] = data
   await saveSnapshot(snap)
 }
 
-function psJson(command: string): string {
-  return `${command} | ConvertTo-Json -Compress -Depth 6`
+export function parseSystemInfoOutput(json: string, admin: boolean): SystemInfo {
+  const parsed = JSON.parse(json) as Partial<Omit<SystemInfo, 'isAdmin'>>
+  const disks = Array.isArray(parsed.disks) ? parsed.disks : parsed.disks ? [parsed.disks] : []
+  return {
+    computer: parsed.computer || 'PC',
+    os: parsed.os || 'Windows',
+    cpu: parsed.cpu || 'CPU não detectada',
+    cores: Number(parsed.cores) || 0,
+    threads: Number(parsed.threads) || 0,
+    gpu: parsed.gpu || 'GPU não detectada',
+    ramGB: Number(parsed.ramGB) || 0,
+    ramFreeGB: Number(parsed.ramFreeGB) || 0,
+    disks,
+    isAdmin: admin
+  }
 }
 
 export async function isAdmin(): Promise<boolean> {
@@ -46,48 +77,72 @@ export async function isAdmin(): Promise<boolean> {
   return out.toLowerCase() === 'true'
 }
 
+export async function runNetworkCommand(command: NetworkCommand): Promise<string> {
+  const commands: Record<NetworkCommand, string> = {
+    'renew-ip': 'ipconfig.exe /renew',
+    'flush-dns': 'ipconfig.exe /flushdns',
+    'reset-winsock': 'netsh.exe winsock reset'
+  }
+  if (!Object.prototype.hasOwnProperty.call(commands, command)) {
+    throw new Error('Comando de rede desconhecido.')
+  }
+  if (process.platform !== 'win32') {
+    throw new Error('Os comandos de rede estão disponíveis somente no Windows.')
+  }
+  if (!(await isAdmin())) {
+    throw new Error('Abra o MestrePicoteBoost como Administrador para executar comandos de rede.')
+  }
+
+  const output = await runPs(commands[command])
+  if (command === 'reset-winsock') {
+    return [output.stdout, 'Reinicie o computador para concluir a redefinição do Winsock.']
+      .filter(Boolean)
+      .join('\n')
+  }
+  return output.stdout || 'Comando concluído sem saída.'
+}
+
 export async function getSystemInfo(): Promise<SystemInfo> {
   const admin = await isAdmin()
-  const json = await runPsSafe(
-    psJson(`
-$cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
-$gpu = @(Get-CimInstance Win32_VideoController | Where-Object { $_.Name -notmatch 'Oray|Remote|Basic Display' } | Select-Object -First 1)
-$os = Get-CimInstance Win32_OperatingSystem
-$cs = Get-CimInstance Win32_ComputerSystem
-$disks = @(Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | ForEach-Object {
-  [pscustomobject]@{ name = $_.DeviceID; freeGB = [math]::Round(($_.FreeSpace/1GB),1); totalGB = [math]::Round(($_.Size/1GB),1) }
+  const { stdout } = await runPs(`
+$ErrorActionPreference = 'Stop'
+$processors = @(Get-CimInstance Win32_Processor -ErrorAction Stop)
+$cpuNames = @($processors | ForEach-Object { ([string]$_.Name).Trim() } | Where-Object { $_ } | Select-Object -Unique)
+$cpu = if ($cpuNames.Count -gt 0) { $cpuNames -join ' / ' } else { 'CPU não detectada' }
+$cores = [int](($processors | Measure-Object -Property NumberOfCores -Sum).Sum)
+$threads = [int](($processors | Measure-Object -Property NumberOfLogicalProcessors -Sum).Sum)
+$gpus = @(Get-CimInstance Win32_VideoController -ErrorAction Stop | ForEach-Object { ([string]$_.Name).Trim() } | Where-Object { $_ -and $_ -notmatch 'Oray|Remote|Basic Display' } | Select-Object -Unique)
+$gpu = if ($gpus.Count -gt 0) { $gpus -join ' / ' } else { 'GPU não detectada' }
+$os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+$cs = Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+$totalMemory = [double]$cs.TotalPhysicalMemory
+if ($totalMemory -le 0) {
+  $totalMemory = [double]((Get-CimInstance Win32_PhysicalMemory -ErrorAction SilentlyContinue | Measure-Object -Property Capacity -Sum).Sum)
+}
+$availableMemoryGB = [math]::Round(([double]$os.FreePhysicalMemory / 1MB), 1)
+$disks = @(Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" -ErrorAction SilentlyContinue | ForEach-Object {
+  if ($_.Size -gt 0) {
+    [pscustomobject]@{ name = $_.DeviceID; freeGB = [math]::Round(($_.FreeSpace / 1GB), 1); totalGB = [math]::Round(($_.Size / 1GB), 1) }
+  }
 })
 [pscustomobject]@{
   computer = $env:COMPUTERNAME
-  os = $os.Caption
-  cpu = ($cpu.Name).Trim()
-  cores = $cpu.NumberOfCores
-  threads = $cpu.NumberOfLogicalProcessors
-  gpu = $(if ($gpu.Count -gt 0) { $gpu[0].Name } else { 'GPU não detectada' })
-  ramGB = [math]::Round($cs.TotalPhysicalMemory/1GB,1)
-  ramFreeGB = [math]::Round($os.FreePhysicalMemory/1MB,1)
+  os = [string]$os.Caption
+  cpu = $cpu
+  cores = $cores
+  threads = $threads
+  gpu = $gpu
+  ramGB = [math]::Round(($totalMemory / 1GB), 1)
+  ramFreeGB = $availableMemoryGB
   disks = $disks
-}
+} | ConvertTo-Json -Compress -Depth 6
 `)
-  )
 
   try {
-    const parsed = JSON.parse(json) as Omit<SystemInfo, 'isAdmin'>
-    const disks = Array.isArray(parsed.disks) ? parsed.disks : parsed.disks ? [parsed.disks] : []
-    return { ...parsed, disks, isAdmin: admin }
-  } catch {
-    return {
-      computer: 'PC',
-      os: 'Windows',
-      cpu: 'CPU não lida',
-      cores: 0,
-      threads: 0,
-      gpu: 'GPU não lida',
-      ramGB: 0,
-      ramFreeGB: 0,
-      disks: [],
-      isAdmin: admin
-    }
+    return parseSystemInfoOutput(stdout, admin)
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    throw new Error(`Não foi possível interpretar os dados de hardware do Windows: ${reason}`)
   }
 }
 
@@ -117,46 +172,79 @@ async function powerGuid(): Promise<string> {
   return match?.[0] ?? ''
 }
 
+async function getServiceState(name: string): Promise<ServiceState> {
+  const output = await runPsSafe(`
+$service = Get-CimInstance Win32_Service -Filter "Name='${name}'" -ErrorAction SilentlyContinue
+if ($null -eq $service) { 'MISSING|MISSING' } else { '{0}|{1}' -f $service.State, $service.StartMode }
+`)
+  const [status, startMode] = output.split('|')
+  if (!status || status === 'MISSING' || !startMode || startMode === 'MISSING') {
+    throw new Error(`Serviço do Windows não encontrado: ${name}`)
+  }
+  return { status, startMode }
+}
+
+async function disableService(name: string): Promise<void> {
+  await runPs(`
+$service = Get-Service -Name '${name}' -ErrorAction Stop
+if ($service.Status -ne 'Stopped') { Stop-Service -Name '${name}' -Force -ErrorAction Stop }
+Set-Service -Name '${name}' -StartupType Disabled -ErrorAction Stop
+`)
+}
+
+async function restoreWindowsService(name: string, previous: ServiceState): Promise<void> {
+  const startModes: Record<string, string> = {
+    Boot: 'boot',
+    System: 'system',
+    Auto: 'auto',
+    Manual: 'demand',
+    Disabled: 'disabled'
+  }
+  const startMode = startModes[previous.startMode]
+  if (!startMode) {
+    throw new Error(`Tipo de inicialização não reconhecido para ${name}: ${previous.startMode}`)
+  }
+
+  await runPs(`
+& sc.exe config '${name}' start= ${startMode} | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'Falha ao restaurar a inicialização do serviço ${name}' }
+switch ('${previous.status}') {
+  'Running' { Start-Service -Name '${name}' -ErrorAction Stop }
+  'Paused' {
+    Start-Service -Name '${name}' -ErrorAction Stop
+    Suspend-Service -Name '${name}' -ErrorAction Stop
+  }
+  default { Stop-Service -Name '${name}' -Force -ErrorAction SilentlyContinue }
+}
+`)
+}
+
 export async function getStatuses(): Promise<TweakStatus[]> {
   const schemeLine = await powerSchemeLine()
   const scheme = schemeLine.match(
     /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/
   )?.[0] ?? ''
   const [
-    gameMode,
     hags,
-    dvr,
     gpuPri,
     visual,
     trans,
     anim,
     bg,
-    throttle,
-    mouse,
-    sysmain
+    mouse
   ] = await Promise.all([
-    regGet('HKCU', 'Software\\Microsoft\\GameBar', 'AutoGameModeEnabled'),
     regGet('HKLM', 'SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers', 'HwSchMode'),
-    regGet('HKCU', 'System\\GameConfigStore', 'GameDVR_Enabled'),
     regGet('HKLM', 'SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Games', 'GPU Priority'),
     regGet('HKCU', 'Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\VisualEffects', 'VisualFXSetting'),
     regGet('HKCU', 'Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize', 'EnableTransparency'),
     regGet('HKCU', 'Control Panel\\Desktop\\WindowMetrics', 'MinAnimate'),
     regGet('HKCU', 'Software\\Microsoft\\Windows\\CurrentVersion\\BackgroundAccessApplications', 'GlobalUserDisabled'),
-    regGet('HKLM', 'SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile', 'NetworkThrottlingIndex'),
-    regGet('HKCU', 'Control Panel\\Mouse', 'MouseSpeed'),
-    runPsSafe('(Get-Service SysMain -ErrorAction SilentlyContinue).Status')
+    regGet('HKCU', 'Control Panel\\Mouse', 'MouseSpeed')
   ])
 
-  const nagleSample = await runPsSafe(`
-$ifaces = Get-ChildItem 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces'
-$hit = $false
-foreach ($i in $ifaces) {
-  $p = Get-ItemProperty $i.PSPath -ErrorAction SilentlyContinue
-  if ($p.TcpNoDelay -eq 1) { $hit = $true; break }
-}
-if ($hit) { '1' } else { '0' }
-`)
+  const serviceStatuses = await Promise.all(
+    Object.entries(OPTIONAL_SERVICES).map(async ([id, name]) => [id, await runPsSafe(`(Get-Service -Name '${name}' -ErrorAction SilentlyContinue).Status`)] as const)
+  )
 
   const map: Record<string, { applied: boolean; current: string }> = {
     'ultimate-power': {
@@ -165,18 +253,16 @@ if ($hit) { '1' } else { '0' }
     },
     'usb-suspend': { applied: false, current: 'plano ativo' },
     'pcie-link': { applied: false, current: 'plano ativo' },
-    'game-mode': { applied: gameMode === '1', current: gameMode },
     hags: { applied: hags === '2', current: hags },
-    'game-dvr': { applied: dvr === '0', current: dvr },
     'mmcss-games': { applied: gpuPri === '8', current: gpuPri },
     'visual-fx': { applied: visual === '2', current: visual },
     transparency: { applied: trans === '0', current: trans },
     animations: { applied: anim === '0', current: anim },
     'background-apps': { applied: bg === '1', current: bg },
-    'network-throttle': { applied: throttle === '4294967295' || throttle.toLowerCase() === 'ffffffff', current: throttle },
-    nagle: { applied: nagleSample === '1', current: nagleSample },
-    'mouse-accel': { applied: mouse === '0', current: mouse },
-    sysmain: { applied: sysmain.toLowerCase() === 'stopped', current: sysmain || 'MISSING' }
+    'mouse-accel': { applied: mouse === '0', current: mouse }
+  }
+  for (const [id, serviceStatus] of serviceStatuses) {
+    map[id] = { applied: serviceStatus.toLowerCase() === 'stopped', current: serviceStatus || 'MISSING' }
   }
 
   return TWEAKS.map((t) => ({
@@ -213,30 +299,12 @@ powercfg /SETDCVALUEINDEX ${guid} 501a4d13-42af-4429-9fd1-a6cf2bdffac9 ee12f906-
 powercfg /setactive ${guid}`)
       return 'PCI Express em desempenho máximo'
     }
-    case 'game-mode': {
-      await remember(id, {
-        auto: await regGet('HKCU', 'Software\\Microsoft\\GameBar', 'AutoGameModeEnabled'),
-        allow: await regGet('HKCU', 'Software\\Microsoft\\GameBar', 'AllowAutoGameMode')
-      })
-      await regSet('HKCU', 'Software\\Microsoft\\GameBar', 'AutoGameModeEnabled', 'DWord', '1')
-      await regSet('HKCU', 'Software\\Microsoft\\GameBar', 'AllowAutoGameMode', 'DWord', '1')
-      return 'Game Mode ligado'
-    }
     case 'hags': {
       await remember(id, {
         value: await regGet('HKLM', 'SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers', 'HwSchMode')
       })
       await regSet('HKLM', 'SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers', 'HwSchMode', 'DWord', '2')
       return 'HAGS ligado (reinicie para valer 100%)'
-    }
-    case 'game-dvr': {
-      await remember(id, {
-        dvr: await regGet('HKCU', 'System\\GameConfigStore', 'GameDVR_Enabled'),
-        cap: await regGet('HKCU', 'SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\GameDVR', 'AppCaptureEnabled')
-      })
-      await regSet('HKCU', 'System\\GameConfigStore', 'GameDVR_Enabled', 'DWord', '0')
-      await regSet('HKCU', 'SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\GameDVR', 'AppCaptureEnabled', 'DWord', '0')
-      return 'Game DVR desligado'
     }
     case 'mmcss-games': {
       const path = 'SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Games'
@@ -295,29 +363,6 @@ New-ItemProperty -Path $path -Name 'MinAnimate' -PropertyType String -Value '0' 
       )
       return 'Apps em segundo plano limitados'
     }
-    case 'network-throttle': {
-      const path = 'SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile'
-      await remember(id, {
-        throttle: await regGet('HKLM', path, 'NetworkThrottlingIndex'),
-        resp: await regGet('HKLM', path, 'SystemResponsiveness')
-      })
-      await regSet('HKLM', path, 'NetworkThrottlingIndex', 'DWord', '4294967295')
-      await regSet('HKLM', path, 'SystemResponsiveness', 'DWord', '0')
-      return 'Throttle de rede removido'
-    }
-    case 'nagle': {
-      await remember(id, { applied: '1' })
-      await runPs(`
-Get-ChildItem 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces' | ForEach-Object {
-  $p = Get-ItemProperty $_.PSPath
-  if ($null -ne $p.DhcpIPAddress -or $null -ne $p.IPAddress) {
-    New-ItemProperty -Path $_.PSPath -Name 'TcpNoDelay' -PropertyType DWord -Value 1 -Force | Out-Null
-    New-ItemProperty -Path $_.PSPath -Name 'TcpAckFrequency' -PropertyType DWord -Value 1 -Force | Out-Null
-  }
-}
-`)
-      return 'Nagle desligado nas interfaces ativas'
-    }
     case 'mouse-accel': {
       await remember(id, {
         speed: await regGet('HKCU', 'Control Panel\\Mouse', 'MouseSpeed'),
@@ -332,13 +377,13 @@ New-ItemProperty -Path $path -Name 'MouseThreshold2' -PropertyType String -Value
 `)
       return 'Precisão do ponteiro desligada'
     }
-    case 'sysmain': {
-      await remember(id, {
-        start: await runPsSafe('(Get-Service SysMain).StartType'),
-        status: await runPsSafe('(Get-Service SysMain).Status')
-      })
-      await runPs('Stop-Service SysMain -Force -ErrorAction SilentlyContinue; Set-Service SysMain -StartupType Disabled')
-      return 'SysMain parado (SSD)'
+    case 'sysmain':
+    case 'telemetry': {
+      const serviceName = OPTIONAL_SERVICES[id]
+      const previous = await getServiceState(serviceName)
+      await remember(id, { startMode: previous.startMode, status: previous.status })
+      await disableService(serviceName)
+      return `${serviceName} parado e desativado`
     }
     default:
       throw new Error(`Tweak desconhecido: ${id}`)
@@ -430,7 +475,23 @@ New-ItemProperty -Path $path -Name 'MouseThreshold2' -PropertyType String -Value
 `)
       break
     case 'sysmain':
-      await runPs('Set-Service SysMain -StartupType Manual; Start-Service SysMain -ErrorAction SilentlyContinue')
+    case 'telemetry':
+      if (prev?.startMode && prev.status) {
+        await restoreWindowsService(OPTIONAL_SERVICES[id], {
+          startMode: prev.startMode,
+          status: prev.status
+        })
+      }
+      break
+    case 'xbox-auth':
+    case 'xbox-game-save':
+    case 'xbox-network':
+      if (prev?.startMode && prev.status) {
+        await restoreWindowsService(LEGACY_XBOX_SERVICES[id], {
+          startMode: prev.startMode,
+          status: prev.status
+        })
+      }
       break
     case 'mmcss-games': {
       const path = 'SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Games'
@@ -450,6 +511,26 @@ New-ItemProperty -Path $path -Name 'MouseThreshold2' -PropertyType String -Value
   }
   void dwordOrString
   return `Revertido: ${id}`
+}
+
+export async function listRestorePoints(): Promise<RestorePoint[]> {
+  return restorePointService.listSnapshots()
+}
+
+export async function createRestorePoint(description?: string): Promise<RestorePoint> {
+  const statuses = await getStatuses()
+  const appliedIds = TWEAKS.filter((tweak) => statuses.some((status) => status.id === tweak.id && status.applied)).map(
+    (tweak) => tweak.id
+  )
+  return restorePointService.createSnapshot(description, appliedIds)
+}
+
+export async function restoreFromPoint(id: string): Promise<ApplyReport> {
+  const point = await restorePointService.restoreSnapshot(id)
+  if (!point) {
+    throw new Error(`Ponto de restauração não encontrado: ${id}`)
+  }
+  return revertTweaks(point.appliedIds)
 }
 
 export async function applyTweaks(ids: string[]): Promise<ApplyReport> {

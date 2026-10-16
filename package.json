@@ -1,6 +1,6 @@
 {
   "name": "mestre-picote-boost",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Otimizações para PC gamer — aplicar, medir e reverter com segurança",
   "author": "MestrePicoteBoost",
   "main": "./out/main/index.js",
@@ -9,20 +9,58 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "start": "npm run dev"
+    "start": "npm run dev",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "allure:clean": "node -e \"import('node:fs/promises').then(fs => fs.rm('allure-results', { recursive: true, force: true }))\"",
+    "allure:report": "allure generate allure-results --clean -o allure-report",
+    "allure:open": "allure open allure-report",
+    "ci:test": "npm run allure:clean && npm run test && npm run test:e2e && npm run allure:report",
+    "dist:win": "npm run build && electron-builder --win nsis --publish never"
   },
   "dependencies": {
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.0",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
     "@types/node": "^24.5.2",
     "@types/react": "^19.1.13",
     "@types/react-dom": "^19.1.9",
     "@vitejs/plugin-react": "^5.0.3",
+    "allure-commandline": "^2.46.1",
+    "allure-playwright": "^3.13.0",
+    "allure-vitest": "^3.13.0",
     "electron": "^38.8.6",
+    "electron-builder": "^26.15.3",
     "electron-vite": "^4.0.1",
+    "jsdom": "^30.1.2",
     "typescript": "^5.9.2",
-    "vite": "^7.1.7"
+    "vite": "^7.1.7",
+    "vitest": "^5.0.3"
+  },
+  "build": {
+    "appId": "com.mestrepicote.boost",
+    "productName": "MestrePicoteBoost",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "artifactName": "${productName}-${version}-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    }
   }
 }

@@ -33,3 +33,14 @@ export interface ApplyReport {
   results: ActionResult[]
   log: string[]
 }
+
+export type NetworkCommand = 'renew-ip' | 'flush-dns' | 'reset-winsock'
+
+export interface RestorePoint {
+  id: string
+  name: string
+  description: string
+  createdAt: string
+  appliedIds: string[]
+  tweakCount: number
+}

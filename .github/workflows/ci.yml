@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, dev]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      CI: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Clean prior Allure results
+        run: npm run allure:clean
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Run end-to-end app tests
+        run: npm run test:e2e
+
+      - name: Generate Allure report
+        if: always()
+        run: npm run allure:report
+
+      - name: Upload Allure results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results
+          path: allure-results
+
+      - name: Upload Allure report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-report
+          path: allure-report
+
+      - name: Add Allure link to workflow summary
+        if: always()
+        run: |
+          echo "## 🔎 Allure report" >> "$GITHUB_STEP_SUMMARY"
+          echo "O relatório Allure foi gerado e está disponível como artefato do workflow: \\`allure-report\\`." >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-report:
+    needs: test
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: github-pages
+      cancel-in-progress: true
+
+    steps:
+      - name: Download Allure report
+        uses: actions/download-artifact@v4
+        with:
+          name: allure-report
+          path: allure-report
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: allure-report
+
+      - name: Deploy Allure report to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Add published URL to workflow summary
+        run: |
+          echo "## 📊 Allure report publicado" >> "$GITHUB_STEP_SUMMARY"
+          echo "Relatório: ${{ steps.deployment.outputs.page_url }}" >> "$GITHUB_STEP_SUMMARY"
