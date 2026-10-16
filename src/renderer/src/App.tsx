@@ -519,6 +519,31 @@ export default function App() {
               Não desliga Windows Defender, UAC, firewall, SmartScreen. Não mexe em BCDEdit
               (HPET, dynamic tick) — risco de boot. Não instala “cleaner” de registro.
             </p>
+            <h3>Contato e redes sociais</h3>
+            <p>
+              Entre em contato com Mestre Picote para otimização, montagem de PC na Zona Oeste de
+              São Paulo e sugestões de peças para montagem de PC.
+            </p>
+            <ul>
+              <li>
+                Instagram{' '}
+                <a href="https://www.instagram.com/mestrepicoteboost/" target="_blank" rel="noreferrer">
+                  @mestrepicoteboost
+                </a>
+              </li>
+              <li>
+                YouTube{' '}
+                <a href="https://www.youtube.com/@mestrepicoteboost" target="_blank" rel="noreferrer">
+                  @mestrepicoteboost
+                </a>
+              </li>
+              <li>
+                Twitch{' '}
+                <a href="https://www.twitch.tv/mestrepicote" target="_blank" rel="noreferrer">
+                  @mestrepicote
+                </a>
+              </li>
+            </ul>
             <p>
               Sistema: {system.os}
               <br />

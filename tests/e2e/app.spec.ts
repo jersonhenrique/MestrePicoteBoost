@@ -175,6 +175,19 @@ test('validates all user-facing application workflows with screenshots and final
     await page.getByRole('button', { name: 'Sobre', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Arquitetura' })).toBeVisible()
     await expect(page.getByText(/Não desliga Windows Defender/)).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Contato e redes sociais' })).toBeVisible()
+    await expect(page.getByRole('link', { name: '@mestrepicoteboost' }).first()).toHaveAttribute(
+      'href',
+      'https://www.instagram.com/mestrepicoteboost/'
+    )
+    await expect(page.getByRole('link', { name: '@mestrepicoteboost' }).nth(1)).toHaveAttribute(
+      'href',
+      'https://www.youtube.com/@mestrepicoteboost'
+    )
+    await expect(page.getByRole('link', { name: '@mestrepicote', exact: true })).toHaveAttribute(
+      'href',
+      'https://www.twitch.tv/mestrepicote'
+    )
     await attachStepScreenshot(page, '13 - tela Sobre')
     await expect(page.locator('.app')).toBeVisible()
     await attachStepScreenshot(page, '14 - validação final da aplicação')
